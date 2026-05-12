@@ -113,23 +113,24 @@ function mkHttpGet(string $url, array $headers = [], int $timeout = 10): ?string
     return ($body !== false) ? $body : null;
 }
 
-// ── GA4 — users via pure PHP JWT + OAuth2 ────────────────────────────────────
+// ── Google SA token — shared JWT helper for GA4 + GSC ────────────────────────
 
 /**
  * Exchange a service account JSON key for a short-lived OAuth2 access token.
  * Pure PHP + openssl — no google/apiclient needed (works on shared hosting).
- * Result is cached statically so both property calls share one token.
+ * Cached statically per (credPath, scope) so GA4 and GSC share the same process.
  */
-function mkGa4AccessToken(string $credPath): ?string {
+function mkGoogleSaToken(string $credPath, string $scope): ?string {
     static $cache = [];
-    if (array_key_exists($credPath, $cache)) {
-        return $cache[$credPath];
+    $cacheKey = $credPath . ':' . $scope;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
     }
 
     $json = @file_get_contents($credPath);
     $key  = $json ? json_decode($json, true) : null;
     if (!is_array($key) || empty($key['private_key']) || empty($key['client_email'])) {
-        return $cache[$credPath] = null;
+        return $cache[$cacheKey] = null;
     }
 
     $b64u    = fn(string $s) => rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
@@ -137,7 +138,7 @@ function mkGa4AccessToken(string $credPath): ?string {
     $header  = $b64u(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
     $payload = $b64u(json_encode([
         'iss'   => $key['client_email'],
-        'scope' => 'https://www.googleapis.com/auth/analytics.readonly',
+        'scope' => $scope,
         'aud'   => 'https://oauth2.googleapis.com/token',
         'iat'   => $now,
         'exp'   => $now + 3600,
@@ -145,7 +146,7 @@ function mkGa4AccessToken(string $credPath): ?string {
 
     $pkey = openssl_pkey_get_private($key['private_key']);
     if (!$pkey) {
-        return $cache[$credPath] = null;
+        return $cache[$cacheKey] = null;
     }
     openssl_sign("{$header}.{$payload}", $sig, $pkey, OPENSSL_ALGO_SHA256);
     $jwt = "{$header}.{$payload}." . $b64u($sig);
@@ -162,7 +163,7 @@ function mkGa4AccessToken(string $credPath): ?string {
     ]]);
     $resp = @file_get_contents('https://oauth2.googleapis.com/token', false, $ctx);
     $data = $resp ? json_decode($resp, true) : null;
-    return $cache[$credPath] = ($data['access_token'] ?? null);
+    return $cache[$cacheKey] = ($data['access_token'] ?? null);
 }
 
 /**
@@ -176,7 +177,7 @@ function mkGa4Users(string $propertyId): ?array {
         return null;
     }
 
-    $token = mkGa4AccessToken($credPath);
+    $token = mkGoogleSaToken($credPath, 'https://www.googleapis.com/auth/analytics.readonly');
     if (!$token) {
         return null;
     }
@@ -246,9 +247,20 @@ function mkPostizPostCounts(): ?array {
     // 7-day window: past 7 days through 7 days ahead (capture queued future posts too)
     $start = date('c', strtotime('-7 days'));
     $end   = date('c', strtotime('+7 days'));
-    $url   = 'http://localhost:4007/api/public/v1/posts?startDate=' . urlencode($start) . '&endDate=' . urlencode($end) . '&take=200';
+    $qs    = 'startDate=' . urlencode($start) . '&endDate=' . urlencode($end) . '&take=200';
 
-    $body = mkHttpGet($url, ["Authorization: {$apiKey}"], 8);
+    // Route through bridge when available (Bluehost can't reach localhost:4007 directly)
+    $bridgeUrl   = defined('MK_BRIDGE_URL')   ? MK_BRIDGE_URL   : null;
+    $bridgeToken = defined('MK_BRIDGE_TOKEN') ? MK_BRIDGE_TOKEN : null;
+    if ($bridgeUrl && $bridgeToken) {
+        $url     = rtrim($bridgeUrl, '/') . '/postiz/api/public/v1/posts?' . $qs;
+        $headers = ["Authorization: Bearer {$bridgeToken}", "X-Postiz-Authorization: {$apiKey}"];
+    } else {
+        $url     = 'http://localhost:4007/api/public/v1/posts?' . $qs;
+        $headers = ["Authorization: {$apiKey}"];
+    }
+
+    $body = mkHttpGet($url, $headers, 8);
     if (!$body) {
         return null;
     }
@@ -301,54 +313,51 @@ function mkBlueskyFollowers(): ?array {
     ];
 }
 
-// ── GSC — organic clicks per site via gsc.py ─────────────────────────────────
+// ── GSC — organic clicks per site via Search Console REST API ─────────────────
 
 /**
- * Parse TSV output from gsc.py performance and return total clicks + impressions.
- * gsc.py outputs a comment header, then tab-separated rows with columns:
- *   query  clicks  impressions  ctr  position
+ * Fetch total clicks + impressions from the Search Console Data API v3.
+ * Uses the same SA key as GA4 (MK_GA4_CREDENTIALS_PATH); site URL must be
+ * in sc-domain: or https:// format matching the verified property.
  *
  * @return array{'clicks': int, 'impressions': int}|null
  */
 function mkGscTotals(string $siteUrl, int $days = 7): ?array {
-    $script = '/home/ben/.openclaw/skills/gsc/scripts/gsc.py';
-    $cmd    = '/usr/bin/python3 ' . escapeshellarg($script)
-            . ' performance ' . escapeshellarg($siteUrl)
-            . ' --days ' . (int)$days
-            . ' 2>/dev/null';
-
-    $output = shell_exec($cmd);
-    if (!$output) {
+    $credPath = defined('MK_GA4_CREDENTIALS_PATH') ? MK_GA4_CREDENTIALS_PATH : null;
+    if (!$credPath || !file_exists($credPath)) {
         return null;
     }
 
-    $totalClicks      = 0;
-    $totalImpressions = 0;
-    $inTable          = false;
-
-    foreach (explode("\n", $output) as $line) {
-        $line = trim($line);
-        if ($line === '' || str_starts_with($line, '#')) {
-            continue;
-        }
-        $cols = explode("\t", $line);
-        // Header row: "query  clicks  impressions  ctr  position"
-        if ($cols[0] === 'query' || $cols[0] === 'page' || $cols[0] === 'country' || $cols[0] === 'device' || $cols[0] === 'date') {
-            $inTable = true;
-            continue;
-        }
-        if ($inTable && count($cols) >= 3) {
-            $totalClicks      += (int)($cols[1] ?? 0);
-            $totalImpressions += (int)($cols[2] ?? 0);
-        }
-    }
-
-    // Return null if we never hit the table (parse failure or no data shape)
-    if (!$inTable) {
+    $token = mkGoogleSaToken($credPath, 'https://www.googleapis.com/auth/webmasters.readonly');
+    if (!$token) {
         return null;
     }
 
-    return ['clicks' => $totalClicks, 'impressions' => $totalImpressions];
+    $endDate   = date('Y-m-d', strtotime('-1 day'));
+    $startDate = date('Y-m-d', strtotime("-{$days} days"));
+    $url       = 'https://searchconsole.googleapis.com/webmasters/v3/sites/'
+               . urlencode($siteUrl) . '/searchAnalytics/query';
+    $body      = json_encode(['startDate' => $startDate, 'endDate' => $endDate, 'rowLimit' => 1]);
+
+    $ctx  = stream_context_create(['http' => [
+        'method'        => 'POST',
+        'header'        => "Authorization: Bearer {$token}\r\nContent-Type: application/json\r\n",
+        'content'       => $body,
+        'timeout'       => 10,
+        'ignore_errors' => true,
+    ]]);
+    $resp = @file_get_contents($url, false, $ctx);
+    $data = $resp ? json_decode($resp, true) : null;
+    if (!is_array($data) || isset($data['error'])) {
+        return null;
+    }
+
+    // No rows = zero traffic (not an error)
+    $row = $data['rows'][0] ?? null;
+    return [
+        'clicks'      => (int)($row['clicks']      ?? 0),
+        'impressions' => (int)($row['impressions']  ?? 0),
+    ];
 }
 
 // ── Fetch all data ────────────────────────────────────────────────────────────
