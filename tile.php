@@ -113,6 +113,120 @@ function mkHttpGet(string $url, array $headers = [], int $timeout = 10): ?string
     return ($body !== false) ? $body : null;
 }
 
+// ── GA4 — users via pure PHP JWT + OAuth2 ────────────────────────────────────
+
+/**
+ * Exchange a service account JSON key for a short-lived OAuth2 access token.
+ * Pure PHP + openssl — no google/apiclient needed (works on shared hosting).
+ * Result is cached statically so both property calls share one token.
+ */
+function mkGa4AccessToken(string $credPath): ?string {
+    static $cache = [];
+    if (array_key_exists($credPath, $cache)) {
+        return $cache[$credPath];
+    }
+
+    $json = @file_get_contents($credPath);
+    $key  = $json ? json_decode($json, true) : null;
+    if (!is_array($key) || empty($key['private_key']) || empty($key['client_email'])) {
+        return $cache[$credPath] = null;
+    }
+
+    $b64u    = fn(string $s) => rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
+    $now     = time();
+    $header  = $b64u(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
+    $payload = $b64u(json_encode([
+        'iss'   => $key['client_email'],
+        'scope' => 'https://www.googleapis.com/auth/analytics.readonly',
+        'aud'   => 'https://oauth2.googleapis.com/token',
+        'iat'   => $now,
+        'exp'   => $now + 3600,
+    ]));
+
+    $pkey = openssl_pkey_get_private($key['private_key']);
+    if (!$pkey) {
+        return $cache[$credPath] = null;
+    }
+    openssl_sign("{$header}.{$payload}", $sig, $pkey, OPENSSL_ALGO_SHA256);
+    $jwt = "{$header}.{$payload}." . $b64u($sig);
+
+    $ctx  = stream_context_create(['http' => [
+        'method'        => 'POST',
+        'header'        => "Content-Type: application/x-www-form-urlencoded\r\n",
+        'content'       => http_build_query([
+            'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+            'assertion'  => $jwt,
+        ]),
+        'timeout'       => 10,
+        'ignore_errors' => true,
+    ]]);
+    $resp = @file_get_contents('https://oauth2.googleapis.com/token', false, $ctx);
+    $data = $resp ? json_decode($resp, true) : null;
+    return $cache[$credPath] = ($data['access_token'] ?? null);
+}
+
+/**
+ * Fetch 7-day total users + 14-day sparkline from GA4 for one property.
+ * Returns ['users' => int, 'sparkline' => int[14]] or null when credentials
+ * are not configured or the API call fails.
+ */
+function mkGa4Users(string $propertyId): ?array {
+    $credPath = defined('MK_GA4_CREDENTIALS_PATH') ? MK_GA4_CREDENTIALS_PATH : null;
+    if (!$credPath || !file_exists($credPath) || $propertyId === '') {
+        return null;
+    }
+
+    $token = mkGa4AccessToken($credPath);
+    if (!$token) {
+        return null;
+    }
+
+    $url  = "https://analyticsdata.googleapis.com/v1beta/properties/{$propertyId}:runReport";
+    $body = json_encode([
+        'dateRanges' => [['startDate' => '13daysAgo', 'endDate' => 'today']],
+        'dimensions' => [['name' => 'date']],
+        'metrics'    => [['name' => 'totalUsers']],
+        'orderBys'   => [['dimension' => ['dimensionName' => 'date']]],
+    ]);
+    $ctx  = stream_context_create(['http' => [
+        'method'        => 'POST',
+        'header'        => "Authorization: Bearer {$token}\r\nContent-Type: application/json\r\n",
+        'content'       => $body,
+        'timeout'       => 10,
+        'ignore_errors' => true,
+    ]]);
+    $resp = @file_get_contents($url, false, $ctx);
+    $data = $resp ? json_decode($resp, true) : null;
+    $rows = $data['rows'] ?? null;
+    if (!is_array($rows)) {
+        return null;
+    }
+
+    $dateMap = [];
+    foreach ($rows as $row) {
+        $date  = $row['dimensionValues'][0]['value'] ?? null; // YYYYMMDD
+        $count = (int)($row['metricValues'][0]['value'] ?? 0);
+        if ($date) {
+            $dateMap[$date] = $count;
+        }
+    }
+
+    // Build 14-element sparkline (oldest → newest) and sum last 7 days
+    $sparkline  = [];
+    $totalUsers = 0;
+    $sevenStart = date('Ymd', strtotime('-6 days')); // inclusive: -6d .. today = 7 days
+    for ($i = 13; $i >= 0; $i--) {
+        $date  = date('Ymd', strtotime("-{$i} days"));
+        $count = $dateMap[$date] ?? 0;
+        $sparkline[] = $count;
+        if ($date >= $sevenStart) {
+            $totalUsers += $count;
+        }
+    }
+
+    return ['users' => $totalUsers, 'sparkline' => $sparkline];
+}
+
 // ── Postiz — posts published in the last 7 days ───────────────────────────────
 
 /**
@@ -253,6 +367,8 @@ $postizCounts = mkPostizPostCounts();
 $bskyData     = mkBlueskyFollowers();
 $gscGlyc      = mkGscTotals('sc-domain:getglyc.com', 7);
 $gscIbd       = mkGscTotals('sc-domain:ibdmovement.com', 7);
+$ga4Glyc      = mkGa4Users(defined('MK_GA4_PROPERTY_GLYC') ? MK_GA4_PROPERTY_GLYC : '');
+$ga4Ibd       = mkGa4Users(defined('MK_GA4_PROPERTY_IBD')  ? MK_GA4_PROPERTY_IBD  : '');
 
 // ── Build per-child metrics ───────────────────────────────────────────────────
 
@@ -289,7 +405,9 @@ if ($glycQueued > 0) {
 }
 
 $glycMetrics = [
-    mkMetricStub('Users'),                          // GA4 — not wired
+    $ga4Glyc !== null
+        ? mkMetric('Users', $ga4Glyc['users'], null, 'raw', 'neutral')
+        : mkMetricStub('Users'),
     $glycGscClicks !== null
         ? mkMetric('Organic clicks', $glycGscClicks, null, 'raw', 'neutral')
         : mkMetricStub('Organic clicks'),
@@ -315,7 +433,9 @@ if ($ibdQueued > 0) {
 }
 
 $ibdMetrics = [
-    mkMetricStub('Users'),                          // GA4 — not wired
+    $ga4Ibd !== null
+        ? mkMetric('Users', $ga4Ibd['users'], null, 'raw', 'neutral')
+        : mkMetricStub('Users'),
     $ibdGscClicks !== null
         ? mkMetric('Organic clicks', $ibdGscClicks, null, 'raw', 'neutral')
         : mkMetricStub('Organic clicks'),
@@ -349,9 +469,9 @@ $topLevelMetrics  = [
 ];
 
 // ── Build sparklines ─────────────────────────────────────────────────────────
-// Placeholder zeros — real 14-day sparkline data requires GA4 (not wired yet)
 
-$emptySparkline14 = array_fill(0, 14, 0);
+$glycSparkline14 = $ga4Glyc !== null ? $ga4Glyc['sparkline'] : array_fill(0, 14, 0);
+$ibdSparkline14  = $ga4Ibd  !== null ? $ga4Ibd['sparkline']  : array_fill(0, 14, 0);
 
 // ── Assemble tile ─────────────────────────────────────────────────────────────
 
@@ -381,7 +501,7 @@ $tile = [
             'metrics'   => $glycMetrics,
             'sparkline' => [
                 'label' => '14-day users',
-                'data'  => $emptySparkline14,
+                'data'  => $glycSparkline14,
             ],
         ],
         [
@@ -391,7 +511,7 @@ $tile = [
             'metrics'   => $ibdMetrics,
             'sparkline' => [
                 'label' => '14-day users',
-                'data'  => $emptySparkline14,
+                'data'  => $ibdSparkline14,
             ],
         ],
     ],
