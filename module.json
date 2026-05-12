@@ -1,0 +1,11 @@
+{
+  "slug": "marketing",
+  "name": "Marketing",
+  "description": "Drafts queue, published archive, engagement timeline, and campaign status for Glyc and IBD Movement",
+  "icon": "megaphone",
+  "version": "0.1.0",
+  "requires_port": ">=1.0.0",
+  "permissions": ["viewer", "editor", "admin"],
+  "tile": true,
+  "entry": "index.php"
+}

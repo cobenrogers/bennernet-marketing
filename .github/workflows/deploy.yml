@@ -1,0 +1,35 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Backup current deployment
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            DOCROOT=~/public_html/website_70366ca4
+            mkdir -p "$DOCROOT/port/marketing"
+            BACKUP_DIR=~/backups/port/marketing/$(date +%Y%m%d_%H%M%S)
+            mkdir -p "$BACKUP_DIR"
+            cp -r "$DOCROOT/port/marketing/." "$BACKUP_DIR/" 2>/dev/null || true
+            find ~/backups/port/marketing/ -maxdepth 1 -type d -mtime +7 -exec rm -rf {} +
+
+      - name: Deploy via rsync
+        uses: burnett01/rsync-deployments@6.0.0
+        with:
+          switches: -avzr --delete --exclude='.env' --exclude='config.php' --exclude='.git' --exclude='docs/'
+          path: ./
+          remote_path: /home2/${{ secrets.SSH_USER }}/public_html/website_70366ca4/port/marketing/
+          remote_host: ${{ secrets.SSH_HOST }}
+          remote_user: ${{ secrets.SSH_USER }}
+          remote_key: ${{ secrets.SSH_KEY }}
