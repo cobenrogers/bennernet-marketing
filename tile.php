@@ -238,26 +238,25 @@ function mkGa4Users(string $propertyId): ?array {
  * Auth note: Postiz public API uses "Authorization: <key>" (no "Bearer" prefix).
  */
 function mkPostizPostCounts(): ?array {
-    $secrets = mkSecrets();
-    if (!$secrets || empty($secrets['postiz_api_key'])) {
-        return null;
-    }
-    $apiKey = $secrets['postiz_api_key'];
-
     // 7-day window: past 7 days through 7 days ahead (capture queued future posts too)
     $start = date('c', strtotime('-7 days'));
     $end   = date('c', strtotime('+7 days'));
     $qs    = 'startDate=' . urlencode($start) . '&endDate=' . urlencode($end) . '&take=200';
 
-    // Route through bridge when available (Bluehost can't reach localhost:4007 directly)
     $bridgeUrl   = defined('MK_BRIDGE_URL')   ? MK_BRIDGE_URL   : null;
     $bridgeToken = defined('MK_BRIDGE_TOKEN') ? MK_BRIDGE_TOKEN : null;
     if ($bridgeUrl && $bridgeToken) {
+        // Bridge injects the Postiz API key internally — caller only needs bridge token
         $url     = rtrim($bridgeUrl, '/') . '/postiz/api/public/v1/posts?' . $qs;
-        $headers = ["Authorization: Bearer {$bridgeToken}", "X-Postiz-Authorization: {$apiKey}"];
+        $headers = ["Authorization: Bearer {$bridgeToken}"];
     } else {
+        // Local dev: call Postiz directly using sops-decrypted key
+        $secrets = mkSecrets();
+        if (!$secrets || empty($secrets['postiz_api_key'])) {
+            return null;
+        }
         $url     = 'http://localhost:4007/api/public/v1/posts?' . $qs;
-        $headers = ["Authorization: {$apiKey}"];
+        $headers = ["Authorization: {$secrets['postiz_api_key']}"];
     }
 
     $body = mkHttpGet($url, $headers, 8);
