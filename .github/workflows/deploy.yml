@@ -22,7 +22,8 @@ jobs:
             BACKUP_DIR=~/backups/port/marketing/$(date +%Y%m%d_%H%M%S)
             mkdir -p "$BACKUP_DIR"
             cp -r "$DOCROOT/port/marketing/." "$BACKUP_DIR/" 2>/dev/null || true
-            find ~/backups/port/marketing/ -maxdepth 1 -type d -mtime +7 -exec rm -rf {} +
+            # Keep the 3 most recent backups (count-based — -mtime misses burst deploys)
+            ls -1dt ~/backups/port/marketing/[0-9]*/ 2>/dev/null | tail -n +4 | xargs -r rm -rf
 
       - name: Deploy via rsync
         uses: burnett01/rsync-deployments@6.0.0
