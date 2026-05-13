@@ -102,9 +102,8 @@ if ($tileCache && isset($tileCache['metrics']) && is_array($tileCache['metrics']
     }
 }
 
-// Per-site: try to get Bluesky followers from constants or fall back to shared count
-// The tile currently uses one shared Bluesky account (bennernet.bsky.social),
-// but constants MK_BLUESKY_HANDLE_GLYC / MK_BLUESKY_HANDLE_IBD may be added later.
+// Shared BlueSky account (bennernet.bsky.social) — see tile cache top-level metrics.
+// Per-site handles will be added in #72 (IBD Movement dedicated account).
 function mkFetchBskyFollowers(string $handle): ?int {
     $url  = 'https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=' . urlencode($handle);
     $ctx  = stream_context_create(['http' => [
@@ -121,21 +120,13 @@ function mkFetchBskyFollowers(string $handle): ?int {
     return isset($data['followersCount']) ? (int)$data['followersCount'] : null;
 }
 
-$glycBskyFollowers = null;
-$ibdBskyFollowers  = null;
-
-if (defined('MK_BLUESKY_HANDLE_GLYC') && MK_BLUESKY_HANDLE_GLYC !== '') {
-    $glycBskyFollowers = mkFetchBskyFollowers(MK_BLUESKY_HANDLE_GLYC);
-}
-if (defined('MK_BLUESKY_HANDLE_IBD') && MK_BLUESKY_HANDLE_IBD !== '') {
-    $ibdBskyFollowers = mkFetchBskyFollowers(MK_BLUESKY_HANDLE_IBD);
-}
-
 // ── Data: per-site metrics extracted from tile cache children ────────────────
 $glycPostsPublished = null;
 $ibdPostsPublished  = null;
 $glycMastoFollowers = null;
 $ibdMastoFollowers  = null;
+$glycGscClicks      = null;
+$ibdGscClicks       = null;
 if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children'])) {
     foreach ($tileCache['children'] as $child) {
         $name    = $child['name'] ?? '';
@@ -153,6 +144,9 @@ if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children
             } elseif (stripos($label, 'mast') !== false) {
                 if ($isGlyc) $glycMastoFollowers = $value;
                 if ($isIbd)  $ibdMastoFollowers  = $value;
+            } elseif (stripos($label, 'organic clicks') !== false) {
+                if ($isGlyc) $glycGscClicks = $value;
+                if ($isIbd)  $ibdGscClicks  = $value;
             }
         }
     }
@@ -587,16 +581,6 @@ renderHeader('Marketing', [
         <div class="mk-card__body">
           <ul class="mk-metric-list">
             <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">Bluesky followers</span>
-              <?php if ($glycBskyFollowers !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$glycBskyFollowers) ?></span>
-              <?php elseif ($bskyFollowersShared !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$bskyFollowersShared) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
               <span class="mk-metric-list__label">Posts published</span>
               <?php if ($glycPostsPublished !== null): ?>
                 <span class="mk-metric-list__value"><?= h((string)$glycPostsPublished) ?></span>
@@ -606,7 +590,11 @@ renderHeader('Marketing', [
             </li>
             <li class="mk-metric-list__item">
               <span class="mk-metric-list__label">GSC clicks (7d)</span>
-              <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php if ($glycGscClicks !== null): ?>
+                <span class="mk-metric-list__value"><?= h((string)$glycGscClicks) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
             </li>
             <li class="mk-metric-list__item">
               <span class="mk-metric-list__label">Mastodon followers</span>
@@ -631,14 +619,6 @@ renderHeader('Marketing', [
         <div class="mk-card__body">
           <ul class="mk-metric-list">
             <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">Bluesky followers</span>
-              <?php if ($ibdBskyFollowers !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$ibdBskyFollowers) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
               <span class="mk-metric-list__label">Posts published</span>
               <?php if ($ibdPostsPublished !== null): ?>
                 <span class="mk-metric-list__value"><?= h((string)$ibdPostsPublished) ?></span>
@@ -648,7 +628,11 @@ renderHeader('Marketing', [
             </li>
             <li class="mk-metric-list__item">
               <span class="mk-metric-list__label">GSC clicks (7d)</span>
-              <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php if ($ibdGscClicks !== null): ?>
+                <span class="mk-metric-list__value"><?= h((string)$ibdGscClicks) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
             </li>
             <li class="mk-metric-list__item">
               <span class="mk-metric-list__label">Mastodon followers</span>
