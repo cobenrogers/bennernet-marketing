@@ -16,6 +16,11 @@ define('MK_CACHE_DIR', '/home2/mirdiwmy/cache/marketing');
 define('MK_GA4_CREDENTIALS_PATH', '/home2/mirdiwmy/keys/ga4-marketing.json');
 define('MK_GA4_PROPERTY_GLYC', '518966874');  // getglyc.com — account 379804471
 define('MK_GA4_PROPERTY_IBD',  '501432462');  // ibdmovement.com — account 365443199
+// Mastodon — public API (no token); follower counts via /api/v1/accounts/lookup
+define('MK_MASTODON_INSTANCE_GLYC', 'mastodon.social');
+define('MK_MASTODON_HANDLE_GLYC',   'glyc');
+define('MK_MASTODON_INSTANCE_IBD',  'mastodon.social');
+define('MK_MASTODON_HANDLE_IBD',    'theibdmovement');
 // Postiz proxy via bridge — add in v0.2
 // define('MK_BRIDGE_TOKEN', 'YOUR_BRIDGE_TOKEN_HERE');
 // define('MK_BRIDGE_URL', 'https://pop-os.tail3d9bfc.ts.net');

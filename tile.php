@@ -10,7 +10,7 @@
  *   - BlueSky       — follower count via public API (LIVE, bennernet.bsky.social)
  *   - GSC           — organic clicks per site (LIVE, via ADC + gsc.py)
  *   - GA4           — users per site (STUB — not wired)
- *   - Mastodon      — followers per account (STUB — no token)
+ *   - Mastodon      — followers per account (LIVE, public API per instance)
  *
  * Cache: MK_CACHE_DIR/marketing-tile.json, 15-minute TTL.
  *
@@ -312,6 +312,37 @@ function mkBlueskyFollowers(): ?array {
     ];
 }
 
+// ── Mastodon — follower count via public lookup API ──────────────────────────
+
+/**
+ * Fetch Mastodon follower count for one account via the instance's public API.
+ * No auth required — `/api/v1/accounts/lookup` is unauthenticated and returns
+ * the `followers_count` field on the account object.
+ *
+ * @param string $instance Hostname only, e.g. "mastodon.social"
+ * @param string $handle   Local handle without the leading "@", e.g. "glyc"
+ * @return array{'followers': int, 'handle': string, 'instance': string}|null
+ */
+function mkMastodonFollowers(string $instance, string $handle): ?array {
+    if ($instance === '' || $handle === '') {
+        return null;
+    }
+    $url  = 'https://' . $instance . '/api/v1/accounts/lookup?acct=' . urlencode($handle);
+    $body = mkHttpGet($url, ['User-Agent: bennernet-marketing/1.0'], 8);
+    if (!$body) {
+        return null;
+    }
+    $data = json_decode($body, true);
+    if (!is_array($data) || !isset($data['followers_count'])) {
+        return null;
+    }
+    return [
+        'followers' => (int)$data['followers_count'],
+        'handle'    => $handle,
+        'instance'  => $instance,
+    ];
+}
+
 // ── GSC — organic clicks per site via Search Console REST API ─────────────────
 
 /**
@@ -377,6 +408,14 @@ $gscGlyc      = mkGscTotals('sc-domain:getglyc.com', 7);
 $gscIbd       = mkGscTotals('sc-domain:ibdmovement.com', 7);
 $ga4Glyc      = mkGa4Users(defined('MK_GA4_PROPERTY_GLYC') ? MK_GA4_PROPERTY_GLYC : '');
 $ga4Ibd       = mkGa4Users(defined('MK_GA4_PROPERTY_IBD')  ? MK_GA4_PROPERTY_IBD  : '');
+$mastoGlyc    = mkMastodonFollowers(
+    defined('MK_MASTODON_INSTANCE_GLYC') ? MK_MASTODON_INSTANCE_GLYC : '',
+    defined('MK_MASTODON_HANDLE_GLYC')   ? MK_MASTODON_HANDLE_GLYC   : ''
+);
+$mastoIbd     = mkMastodonFollowers(
+    defined('MK_MASTODON_INSTANCE_IBD') ? MK_MASTODON_INSTANCE_IBD : '',
+    defined('MK_MASTODON_HANDLE_IBD')   ? MK_MASTODON_HANDLE_IBD   : ''
+);
 
 // ── Build per-child metrics ───────────────────────────────────────────────────
 
@@ -419,14 +458,16 @@ $glycMetrics = [
     $glycGscClicks !== null
         ? mkMetric('Organic clicks', $glycGscClicks, null, 'raw', 'neutral')
         : mkMetricStub('Organic clicks'),
-    mkMetricStub('Mast. followers'),                // Mastodon — no token
+    $mastoGlyc !== null
+        ? mkMetric('Mast. followers', $mastoGlyc['followers'], null, 'raw', 'neutral')
+        : mkMetricStub('Mast. followers'),
     $glycPublished !== null
         ? mkMetric('Posts published', $glycPublished, $glycPostsDelta, 'raw', 'neutral')
         : mkMetricStub('Posts published'),
 ];
 
 // Glyc status: online if we have at least one live source
-$glycSourcesOk = ($glycGscClicks !== null) || ($glycPublished !== null);
+$glycSourcesOk = ($glycGscClicks !== null) || ($glycPublished !== null) || ($mastoGlyc !== null);
 $glycStatus    = $glycSourcesOk ? 'online' : 'idle';
 
 // ── IBD child ─────────────────────────────────────────────────────────────────
@@ -447,13 +488,15 @@ $ibdMetrics = [
     $ibdGscClicks !== null
         ? mkMetric('Organic clicks', $ibdGscClicks, null, 'raw', 'neutral')
         : mkMetricStub('Organic clicks'),
-    mkMetricStub('Mast. followers'),                // Mastodon — no token
+    $mastoIbd !== null
+        ? mkMetric('Mast. followers', $mastoIbd['followers'], null, 'raw', 'neutral')
+        : mkMetricStub('Mast. followers'),
     $ibdPublished !== null
         ? mkMetric('Posts published', $ibdPublished, $ibdPostsDelta, 'raw', 'neutral')
         : mkMetricStub('Posts published'),
 ];
 
-$ibdSourcesOk = ($ibdGscClicks !== null) || ($ibdPublished !== null);
+$ibdSourcesOk = ($ibdGscClicks !== null) || ($ibdPublished !== null) || ($mastoIbd !== null);
 $ibdStatus    = $ibdSourcesOk ? 'online' : 'idle';
 
 // ── Top-level status = worst-of-children ─────────────────────────────────────
