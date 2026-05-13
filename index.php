@@ -131,24 +131,28 @@ if (defined('MK_BLUESKY_HANDLE_IBD') && MK_BLUESKY_HANDLE_IBD !== '') {
     $ibdBskyFollowers = mkFetchBskyFollowers(MK_BLUESKY_HANDLE_IBD);
 }
 
-// ── Data: published post counts per site (from tile cache children) ───────────
+// ── Data: per-site metrics extracted from tile cache children ────────────────
 $glycPostsPublished = null;
 $ibdPostsPublished  = null;
+$glycMastoFollowers = null;
+$ibdMastoFollowers  = null;
 if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children'])) {
     foreach ($tileCache['children'] as $child) {
-        $name = $child['name'] ?? '';
-        if (stripos($name, 'glyc') !== false) {
-            foreach (($child['metrics'] ?? []) as $metric) {
-                if (isset($metric['label']) && stripos($metric['label'], 'posts published') !== false) {
-                    $glycPostsPublished = $metric['value'];
-                }
-            }
+        $name    = $child['name'] ?? '';
+        $isGlyc  = stripos($name, 'glyc') !== false;
+        $isIbd   = stripos($name, 'ibd')  !== false;
+        if (!$isGlyc && !$isIbd) {
+            continue;
         }
-        if (stripos($name, 'ibd') !== false) {
-            foreach (($child['metrics'] ?? []) as $metric) {
-                if (isset($metric['label']) && stripos($metric['label'], 'posts published') !== false) {
-                    $ibdPostsPublished = $metric['value'];
-                }
+        foreach (($child['metrics'] ?? []) as $metric) {
+            $label = $metric['label'] ?? '';
+            $value = $metric['value'] ?? null;
+            if (stripos($label, 'posts published') !== false) {
+                if ($isGlyc) $glycPostsPublished = $value;
+                if ($isIbd)  $ibdPostsPublished  = $value;
+            } elseif (stripos($label, 'mast') !== false) {
+                if ($isGlyc) $glycMastoFollowers = $value;
+                if ($isIbd)  $ibdMastoFollowers  = $value;
             }
         }
     }
@@ -176,7 +180,11 @@ if (defined('MK_POSTIZ_URL') && MK_POSTIZ_URL !== '' &&
 }
 
 if ($postizConfigured && $postizBaseUrl !== null && $postizAuthHeader !== null) {
-    $postizUrl = $postizBaseUrl . '/api/public/v1/posts?status=QUEUE&take=5';
+    // Postiz requires startDate + endDate (ISO 8601); 7-day forward window captures the queue.
+    $qs = 'startDate=' . urlencode(date('c', strtotime('-1 day')))
+        . '&endDate='  . urlencode(date('c', strtotime('+7 days')))
+        . '&take=200';
+    $postizUrl = $postizBaseUrl . '/api/public/v1/posts?' . $qs;
     $ctx = stream_context_create(['http' => [
         'method'        => 'GET',
         'header'        => $postizAuthHeader . "\r\nUser-Agent: bennernet-marketing/1.0",
@@ -190,7 +198,9 @@ if ($postizConfigured && $postizBaseUrl !== null && $postizAuthHeader !== null) 
         $data  = json_decode($body, true);
         $posts = is_array($data) ? ($data['posts'] ?? (isset($data[0]) ? $data : null)) : null;
         if (is_array($posts)) {
-            $postizQueueCount = count($posts);
+            // Filter to QUEUE only, client-side
+            $queued = array_filter($posts, fn($p) => ($p['state'] ?? '') === 'QUEUE');
+            $postizQueueCount = count($queued);
         } else {
             $postizError = true;
         }
@@ -600,7 +610,11 @@ renderHeader('Marketing', [
             </li>
             <li class="mk-metric-list__item">
               <span class="mk-metric-list__label">Mastodon followers</span>
-              <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php if ($glycMastoFollowers !== null): ?>
+                <span class="mk-metric-list__value"><?= h((string)$glycMastoFollowers) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
             </li>
           </ul>
         </div>
@@ -638,7 +652,11 @@ renderHeader('Marketing', [
             </li>
             <li class="mk-metric-list__item">
               <span class="mk-metric-list__label">Mastodon followers</span>
-              <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php if ($ibdMastoFollowers !== null): ?>
+                <span class="mk-metric-list__value"><?= h((string)$ibdMastoFollowers) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
             </li>
           </ul>
         </div>
