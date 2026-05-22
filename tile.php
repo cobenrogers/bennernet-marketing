@@ -551,9 +551,14 @@ const POSTIZ_ID_IBD_X         = 'cmpbr6c0n0001mo8mj5m2d3hx';
 $postizCounts = mkPostizPostCounts();
 
 // Per-site Bluesky follower counts (separate accounts per site)
+// Config.php constants take priority over sops so production (no sops) works.
 $secrets          = mkSecrets();
-$glycBskyHandle   = $secrets['bluesky_handle']               ?? '';
-$ibdBskyHandle    = $secrets['bluesky_ibdmovement_handle']   ?? '';
+$glycBskyHandle   = defined('MK_BLUESKY_HANDLE_GLYC') && MK_BLUESKY_HANDLE_GLYC !== ''
+    ? MK_BLUESKY_HANDLE_GLYC
+    : ($secrets['bluesky_handle'] ?? '');
+$ibdBskyHandle    = defined('MK_BLUESKY_HANDLE_IBD') && MK_BLUESKY_HANDLE_IBD !== ''
+    ? MK_BLUESKY_HANDLE_IBD
+    : ($secrets['bluesky_ibdmovement_handle'] ?? '');
 $bskyGlyc         = mkBlueskyFollowers($glycBskyHandle);
 $bskyIbd          = mkBlueskyFollowers($ibdBskyHandle);
 $gscGlyc      = mkGscTotals('sc-domain:getglyc.com',    7);

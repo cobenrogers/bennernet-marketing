@@ -44,6 +44,8 @@ define('MK_WORKSPACE_PATH',         sys_get_temp_dir() . '/mk_workspace_test');
 define('MK_GA4_CREDENTIALS_PATH',   '');
 define('MK_GA4_PROPERTY_GLYC',      '518966874');
 define('MK_GA4_PROPERTY_IBD',       '501432462');
+define('MK_BLUESKY_HANDLE_GLYC', 'bennernet.bsky.social');
+define('MK_BLUESKY_HANDLE_IBD',  'ibdmovement.bsky.social');
 define('MK_MASTODON_INSTANCE_GLYC', 'mastodon.social');
 define('MK_MASTODON_HANDLE_GLYC',   'glyc');
 define('MK_MASTODON_INSTANCE_IBD',  'mastodon.social');
