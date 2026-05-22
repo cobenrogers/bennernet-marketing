@@ -415,7 +415,7 @@ function mkCalendarStripHtml(string $html): string {
  */
 function mkCalendarPreview(string $content, int $maxLen = 100): string {
     $plain = mkCalendarStripHtml($content);
-    return mb_strlen($plain) > $maxLen ? mb_substr($plain, 0, $maxLen) . '\u2026' : $plain;
+    return mb_strlen($plain) > $maxLen ? mb_substr($plain, 0, $maxLen) . "…" : $plain;
 }
 
 /**
@@ -785,6 +785,42 @@ renderHeader('Marketing', [
 .mk-recommendation-list { list-style: disc; padding-left: var(--space-6); margin: 0; }
 .mk-recommendation-list__item { padding: var(--space-1) 0; }
 .mk-recommendation-list__item--static { color: var(--muted, #6b7280); }
+
+/* Upcoming Calendar */
+.mk-calendar-date-divider {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-secondary);
+  padding: var(--space-2) 0 var(--space-1);
+  border-top: 1px solid var(--color-border);
+  margin-top: var(--space-2);
+}
+.mk-calendar-date-divider:first-child {
+  border-top: none;
+  margin-top: 0;
+}
+.mk-calendar-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  font-size: var(--text-sm);
+}
+.mk-calendar-item__time {
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 9rem;
+}
+.mk-calendar-item__preview {
+  color: var(--color-text-primary);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 </style>
 
 <div class="mk-dashboard">
