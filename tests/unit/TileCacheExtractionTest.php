@@ -126,6 +126,50 @@ class TileCacheExtractionTest extends TestCase
         $this->assertSame(412, $vars['bskyFollowersShared']);
     }
 
+    // ── Sparkline ─────────────────────────────────────────────────────────────
+
+    public function test_glyc_sparkline_extracted_correctly(): void
+    {
+        $vars = $this->runExtraction();
+        // Fixture: getglyc.com sparkline data has 14 entries
+        $this->assertIsArray($vars['glycSparkline']);
+        $this->assertCount(14, $vars['glycSparkline']);
+        $this->assertSame(8, $vars['glycSparkline'][0]);
+        $this->assertSame(9, $vars['glycSparkline'][13]);
+    }
+
+    public function test_ibd_sparkline_extracted_correctly(): void
+    {
+        $vars = $this->runExtraction();
+        // Fixture: ibdmovement.com sparkline data has 14 entries
+        $this->assertIsArray($vars['ibdSparkline']);
+        $this->assertCount(14, $vars['ibdSparkline']);
+        $this->assertSame(31, $vars['ibdSparkline'][0]);
+        $this->assertSame(34, $vars['ibdSparkline'][13]);
+    }
+
+    // ── GA4 stub when label absent ────────────────────────────────────────────
+
+    public function testGa4UsersStubWhenLabelAbsent(): void
+    {
+        $cache = $this->tileCache;
+        // Remove 'Users' metric from both children
+        foreach ($cache['children'] as &$child) {
+            $child['metrics'] = array_values(array_filter(
+                $child['metrics'] ?? [],
+                fn($m) => stripos($m['label'] ?? '', 'users') === false
+            ));
+            // Also remove sparkline so we can confirm it stays null
+            unset($child['sparkline']);
+        }
+        unset($child);
+        $vars = $this->runExtraction($cache);
+        $this->assertNull($vars['glycGa4Users'], 'glycGa4Users must be null when Users label is absent');
+        $this->assertNull($vars['ibdGa4Users'],  'ibdGa4Users must be null when Users label is absent');
+        $this->assertNull($vars['glycSparkline'], 'glycSparkline must be null when sparkline is absent');
+        $this->assertNull($vars['ibdSparkline'],  'ibdSparkline must be null when sparkline is absent');
+    }
+
     // ── Null-safety: unknown child names are ignored ──────────────────────────
 
     public function test_unknown_child_name_does_not_overwrite_glyc(): void
@@ -149,6 +193,10 @@ class TileCacheExtractionTest extends TestCase
         $this->assertNull($vars['ibdGscClicks']);
         $this->assertNull($vars['glycMastoFollowers']);
         $this->assertNull($vars['bskyFollowersShared']);
+        $this->assertNull($vars['glycGa4Users']);
+        $this->assertNull($vars['ibdGa4Users']);
+        $this->assertNull($vars['glycSparkline']);
+        $this->assertNull($vars['ibdSparkline']);
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
@@ -201,6 +249,8 @@ class TileCacheExtractionTest extends TestCase
         $ibdGscClicks       = null;
         $glycGa4Users       = null;
         $ibdGa4Users        = null;
+        $glycSparkline      = null;
+        $ibdSparkline       = null;
 
         if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children'])) {
             foreach ($tileCache['children'] as $child) {
@@ -227,6 +277,14 @@ class TileCacheExtractionTest extends TestCase
                         if ($isIbd)  $ibdGa4Users  = $value;
                     }
                 }
+                // Extract sparkline (14-day users)
+                $sparklineData = isset($child['sparkline']['data']) && is_array($child['sparkline']['data'])
+                    ? $child['sparkline']['data']
+                    : null;
+                if ($sparklineData !== null) {
+                    if ($isGlyc) $glycSparkline = $sparklineData;
+                    if ($isIbd)  $ibdSparkline  = $sparklineData;
+                }
             }
         }
 
@@ -235,7 +293,8 @@ class TileCacheExtractionTest extends TestCase
             'glycPostsPublished', 'ibdPostsPublished',
             'glycMastoFollowers', 'ibdMastoFollowers',
             'glycGscClicks',      'ibdGscClicks',
-            'glycGa4Users',       'ibdGa4Users'
+            'glycGa4Users',       'ibdGa4Users',
+            'glycSparkline',      'ibdSparkline'
         );
     }
 }
