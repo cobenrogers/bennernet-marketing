@@ -12,8 +12,15 @@ class ChannelHealthTest extends TestCase {
         $ts = date('c', time() - 20 * 86400); // 20 days ago
         $this->assertSame('stale', mkChannelStatus(0, $ts));
     }
-    public function testChannelStatusStaleWhenNull(): void {
-        $this->assertSame('stale', mkChannelStatus(0, null));
+    public function testChannelStatusStaleWhenNullButPostizAvailable(): void {
+        $this->assertSame('stale', mkChannelStatus(0, null, true));
+    }
+    public function testChannelStatusUnknownWhenPostizNotAvailable(): void {
+        $this->assertSame('unknown', mkChannelStatus(0, null, false));
+    }
+    public function testChannelStatusUnknownEvenWithLastPublished(): void {
+        $ts = date('c', time() - 3 * 86400);
+        $this->assertSame('unknown', mkChannelStatus(null, $ts, false));
     }
     public function testChannelStatusError(): void {
         $ts = date('c', time() - 1 * 86400);

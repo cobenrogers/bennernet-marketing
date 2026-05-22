@@ -361,7 +361,8 @@ function mkPlatformBadgeClass(string $platform): string {
  * Returns 'healthy', 'stale', or 'error'.
  * Issue: cobenrogers/bennernet-marketing#95
  */
-function mkChannelStatus(?int $errors7d, ?string $lastPublished): string {
+function mkChannelStatus(?int $errors7d, ?string $lastPublished, bool $postizAvailable = true): string {
+    if (!$postizAvailable) return 'unknown';
     if ($errors7d !== null && $errors7d > 0) return 'error';
     if ($lastPublished === null) return 'stale';
     $age = (time() - strtotime($lastPublished)) / 86400;
@@ -815,6 +816,9 @@ renderHeader('Marketing', [
   color: var(--color-warning);
   font-weight: 600;
 }
+.mk-status--unknown {
+  color: var(--muted, #6b7280);
+}
 .mk-status--error {
   color: var(--color-danger, #dc2626);
   font-weight: 600;
@@ -1213,12 +1217,14 @@ renderHeader('Marketing', [
 
                 $status     = mkChannelStatus(
                     $errors7d,
-                    $lastPublished
+                    $lastPublished,
+                    $postizConfigured
                 );
                 $statusLabel = match ($status) {
                     'healthy' => 'Healthy',
                     'stale'   => 'Stale',
                     'error'   => 'Error',
+                    'unknown' => '—',
                     default   => '—',
                 };
 
