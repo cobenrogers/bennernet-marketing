@@ -29,3 +29,9 @@ define('MK_MASTODON_HANDLE_IBD',    'theibdmovement');
 // Postiz proxy via bridge — add in v0.2
 // define('MK_BRIDGE_TOKEN', 'YOUR_BRIDGE_TOKEN_HERE');
 // define('MK_BRIDGE_URL', 'https://pop-os.tail3d9bfc.ts.net');
+// X/Twitter — OAuth2 app-only credentials (Twitter Developer Portal → App → Keys and Tokens)
+// API Key = Consumer Key, API Key Secret = Consumer Secret
+define('MK_X_API_KEY',       'YOUR_X_API_KEY_HERE');
+define('MK_X_API_SECRET',    'YOUR_X_API_SECRET_HERE');
+define('MK_X_USERNAME_GLYC', 'getglyc');
+define('MK_X_USERNAME_IBD',  'IBDMovement');
