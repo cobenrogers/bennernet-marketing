@@ -1218,7 +1218,7 @@ renderHeader('Marketing', [
                 $status     = mkChannelStatus(
                     $errors7d,
                     $lastPublished,
-                    $postizConfigured
+                    $postizConfigured && !$postizError
                 );
                 $statusLabel = match ($status) {
                     'healthy' => 'Healthy',
