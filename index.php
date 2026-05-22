@@ -140,6 +140,14 @@ if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children
 
 $campaignData = $tileCache['campaign_data'] ?? null;
 
+// ── Postiz integration IDs (mirrors tile.php constants) ──────────────────────
+if (!defined('POSTIZ_ID_GLYC_MASTODON')) define('POSTIZ_ID_GLYC_MASTODON', 'cmouqqkw70001o08gts5rpnyb');
+if (!defined('POSTIZ_ID_IBD_MASTODON'))  define('POSTIZ_ID_IBD_MASTODON',  'cmouqudgd0003o08gq5w1q3jj');
+if (!defined('POSTIZ_ID_GLYC_BLUESKY'))  define('POSTIZ_ID_GLYC_BLUESKY',  'cmouj99190001pi8h1f0upfga');
+if (!defined('POSTIZ_ID_IBD_BLUESKY'))   define('POSTIZ_ID_IBD_BLUESKY',   'cmpbj9osm0008poec8q68tlgo');
+if (!defined('POSTIZ_ID_GLYC_X'))        define('POSTIZ_ID_GLYC_X',        'cmpbr9le70003mo8mzzg84o2d');
+if (!defined('POSTIZ_ID_IBD_X'))         define('POSTIZ_ID_IBD_X',         'cmpbr6c0n0001mo8mj5m2d3hx');
+
 // ── Data: Postiz queue status ─────────────────────────────────────────────────
 $postizQueueCount       = null;
 $postizError            = false;
@@ -258,7 +266,7 @@ function mkPostizPostPlatform(array $post): string {
  * Group a Postiz posts array by known integration platform keys.
  *
  * Returns counts per platform: queued, published_7d, errors_7d, last_published.
- * Uses the POSTIZ_ID_* constants defined in tile.php (loaded via tile cache bootstrap).
+ * Uses the POSTIZ_ID_* constants defined above (mirrored from tile.php).
  *
  * Issue: cobenrogers/bennernet-marketing#94
  */
