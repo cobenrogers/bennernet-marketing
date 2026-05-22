@@ -171,6 +171,32 @@ if ($postizConfigured && $postizBaseUrl !== null && $postizAuthHeader !== null) 
     }
 }
 
+// ── Data: upcoming calendar (next 14 days, QUEUE posts) ──────────────────
+$calendarPosts = [];
+$calendarError = false;
+if ($postizConfigured && $postizBaseUrl !== null && $postizAuthHeader !== null) {
+    $calStart = date('Y-m-d\TH:i:s\Z');
+    $calEnd   = date('Y-m-d\TH:i:s\Z', strtotime('+14 days'));
+    $calUrl   = $postizBaseUrl . '/api/public/v1/posts?startDate=' . urlencode($calStart) . '&endDate=' . urlencode($calEnd);
+    $calCtx   = stream_context_create(['http' => [
+        'method'        => 'GET',
+        'header'        => $postizAuthHeader . "\r\n",
+        'timeout'       => 8,
+        'ignore_errors' => true,
+    ]]);
+    $calRaw  = @file_get_contents($calUrl, false, $calCtx);
+    $calData = $calRaw ? json_decode($calRaw, true) : null;
+    if (is_array($calData) && isset($calData['posts'])) {
+        $allCalPosts = $calData['posts'];
+        // Filter to QUEUE only, sort ascending by publishDate
+        $calendarPosts = array_filter($allCalPosts, fn($p) => ($p['state'] ?? '') === 'QUEUE');
+        usort($calendarPosts, fn($a, $b) => strcmp($a['publishDate'] ?? '', $b['publishDate'] ?? ''));
+        $calendarPosts = array_values($calendarPosts);
+    } elseif ($postizConfigured) {
+        $calendarError = true;
+    }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
@@ -297,6 +323,110 @@ function mkChannelStatus(?int $errors7d, ?string $lastPublished): string {
 }
 
 /**
+ * Check for Postiz ERROR posts in the last 7 days.
+ *
+ * Issue: cobenrogers/bennernet-marketing#98
+ */
+function mkCheckPostizErrors(array $postizByPlatform): array {
+    $errorPlatforms = [];
+    foreach ($postizByPlatform as $key => $data) {
+        if (($data['errors_7d'] ?? 0) > 0) {
+            $errorPlatforms[] = $key . ' (' . $data['errors_7d'] . ' error' . ($data['errors_7d'] > 1 ? 's' : '') . ')';
+        }
+    }
+    if (empty($errorPlatforms)) {
+        return ['ok' => true, 'message' => 'No Postiz errors in the last 7 days.', 'severity' => 'info'];
+    }
+    $n = array_sum(array_column($postizByPlatform, 'errors_7d'));
+    return [
+        'ok'       => false,
+        'message'  => "⚠️ {$n} Postiz ERROR post(s) on " . implode(', ', $errorPlatforms) . " — manual re-post needed",
+        'severity' => 'error',
+    ];
+}
+
+/**
+ * Check for a GSC clicks week-over-week drop of more than 25%.
+ *
+ * Issue: cobenrogers/bennernet-marketing#98
+ */
+function mkCheckGscDrop(?int $currentClicks, ?int $priorClicks, string $site): array {
+    if ($currentClicks === null || $priorClicks === null || $priorClicks === 0) {
+        return ['ok' => true, 'message' => "GSC clicks data unavailable for {$site}.", 'severity' => 'info'];
+    }
+    $drop = ($priorClicks - $currentClicks) / $priorClicks;
+    if ($drop > 0.25) {
+        $pct = round($drop * 100);
+        return [
+            'ok'       => false,
+            'message'  => "📉 GSC clicks down {$pct}% week-over-week for {$site}",
+            'severity' => 'warn',
+        ];
+    }
+    return ['ok' => true, 'message' => "GSC clicks stable for {$site}.", 'severity' => 'info'];
+}
+
+/**
+ * Check for overdue engagement check-ins in the engagement log.
+ *
+ * Issue: cobenrogers/bennernet-marketing#98
+ */
+function mkCheckEngagementOverdue(): array {
+    $wsPath = defined('MK_WORKSPACE_PATH') ? MK_WORKSPACE_PATH : null;
+    if (!$wsPath) {
+        return ['ok' => true, 'message' => 'Workspace path not configured.', 'severity' => 'info'];
+    }
+    $logPath = rtrim($wsPath, '/') . '/tracking/engagement-log.md';
+    if (!file_exists($logPath)) {
+        return ['ok' => true, 'message' => 'Engagement log not found.', 'severity' => 'info'];
+    }
+    $content = file_get_contents($logPath);
+    if ($content === false) {
+        return ['ok' => true, 'message' => 'Could not read engagement log.', 'severity' => 'info'];
+    }
+    // Parse check-in dates from table rows — format: | ... | YYYY-MM-DD | ... |
+    preg_match_all('/\|\s*(\d{4}-\d{2}-\d{2})\s*\|/', $content, $matches);
+    $today   = date('Y-m-d');
+    $overdue = 0;
+    foreach ($matches[1] as $dateStr) {
+        if ($dateStr < $today) {
+            $overdue++;
+        }
+    }
+    if ($overdue > 0) {
+        return [
+            'ok'       => false,
+            'message'  => "📋 {$overdue} overdue engagement check-in(s) — run engagement-check.py --all --update-log",
+            'severity' => 'warn',
+        ];
+    }
+    return ['ok' => true, 'message' => 'All engagement check-ins up to date.', 'severity' => 'info'];
+}
+
+/**
+ * Strip HTML tags and collapse whitespace for calendar post preview.
+ */
+function mkCalendarStripHtml(string $html): string {
+    return trim(preg_replace('/\s+/', ' ', strip_tags($html)));
+}
+
+/**
+ * Return a plain-text preview of post content, truncated to $maxLen chars.
+ */
+function mkCalendarPreview(string $content, int $maxLen = 100): string {
+    $plain = mkCalendarStripHtml($content);
+    return mb_strlen($plain) > $maxLen ? mb_substr($plain, 0, $maxLen) . '\u2026' : $plain;
+}
+
+/**
+ * Format an ISO 8601 datetime string for display in the calendar.
+ */
+function mkCalendarFormatDate(string $iso): string {
+    $ts = strtotime($iso);
+    return $ts !== false ? date('D M j · g:i A', $ts) : $iso;
+}
+
+/**
  * Extract a relative time label from a filename with a YYYY-MM-DD prefix.
  */
 function mkRelativeTime(string $filename): string
@@ -313,6 +443,15 @@ function mkRelativeTime(string $filename): string
     }
     return '';
 }
+
+// ── Anomaly checks ────────────────────────────────────────────────────────────
+$anomalyChecks = [
+    mkCheckPostizErrors($postizByPlatform),
+    mkCheckGscDrop($glycGscClicks, null, 'getglyc.com'),  // prior week data not cached yet
+    mkCheckGscDrop($ibdGscClicks,  null, 'ibdmovement.com'),
+    mkCheckEngagementOverdue(),
+];
+$activeFlags = array_filter($anomalyChecks, fn($c) => !$c['ok']);
 
 renderHeader('Marketing', [
     'user'        => $user,
@@ -634,6 +773,18 @@ renderHeader('Marketing', [
   flex-shrink: 0;
   vertical-align: middle;
 }
+
+/* Flags list */
+.mk-flag-list { list-style: none; padding: 0; margin: 0; }
+.mk-flag-list__item { padding: var(--space-2) 0; border-bottom: 1px solid var(--color-border); }
+.mk-flag-list__item:last-child { border-bottom: none; }
+.mk-flag-list__item--warn { color: var(--color-warn, #b45309); }
+.mk-flag-list__item--error { color: var(--color-error, #dc2626); }
+
+/* Recommendations list */
+.mk-recommendation-list { list-style: disc; padding-left: var(--space-6); margin: 0; }
+.mk-recommendation-list__item { padding: var(--space-1) 0; }
+.mk-recommendation-list__item--static { color: var(--muted, #6b7280); }
 </style>
 
 <div class="mk-dashboard">
@@ -864,18 +1015,63 @@ renderHeader('Marketing', [
         </div>
       </div>
 
-      <!-- Anomaly flag block -->
-      <div class="mk-card" aria-labelledby="card-anomaly-title">
-        <div class="mk-card__header">
-          <h3 class="mk-card__title" id="card-anomaly-title">
-            <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#alert-triangle"></use></svg>
-            Anomaly Check
-          </h3>
+      <!-- Flags + Recommendations stacked in the right column -->
+      <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+
+        <!-- Anomaly / Flags card -->
+        <div class="mk-card" aria-labelledby="card-anomaly-title">
+          <div class="mk-card__header">
+            <h3 class="mk-card__title" id="card-anomaly-title">
+              <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#alert-triangle"></use></svg>
+              Flags
+            </h3>
+          </div>
+          <div class="mk-card__body">
+            <?php if (empty($activeFlags)): ?>
+              <p class="mk-notice mk-notice--success">All clear — no anomalies detected.</p>
+            <?php else: ?>
+              <ul class="mk-flag-list">
+                <?php foreach ($activeFlags as $flag): ?>
+                  <li class="mk-flag-list__item mk-flag-list__item--<?= h($flag['severity']) ?>">
+                    <?= h($flag['message']) ?>
+                  </li>
+                <?php endforeach; ?>
+              </ul>
+            <?php endif; ?>
+          </div>
         </div>
-        <div class="mk-card__body">
-          <p class="mk-notice mk-notice--success">No anomalies detected.</p>
+
+        <!-- Recommendations card -->
+        <div class="mk-card" aria-labelledby="card-recommendations-title">
+          <div class="mk-card__header">
+            <h3 class="mk-card__title" id="card-recommendations-title">
+              <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#lightbulb"></use></svg>
+              Recommendations
+            </h3>
+          </div>
+          <div class="mk-card__body">
+            <ul class="mk-recommendation-list">
+              <?php foreach ($activeFlags as $flag): ?>
+                <?php
+                  // Derive action from flag message
+                  $action = str_contains($flag['message'], 'Postiz ERROR')
+                      ? 'Re-post failed content in Postiz'
+                      : (str_contains($flag['message'], 'GSC clicks down')
+                          ? 'Review GSC drop — check Search Console for indexing issues'
+                          : (str_contains($flag['message'], 'engagement check-in')
+                              ? 'Run engagement-check.py --all --update-log'
+                              : $flag['message']));
+                ?>
+                <li class="mk-recommendation-list__item"><?= h($action) ?></li>
+              <?php endforeach; ?>
+              <li class="mk-recommendation-list__item mk-recommendation-list__item--static">Review Drafts Queue for ready-to-publish content</li>
+              <li class="mk-recommendation-list__item mk-recommendation-list__item--static">Check upcoming calendar for scheduling gaps</li>
+              <li class="mk-recommendation-list__item mk-recommendation-list__item--static">Update engagement log after check-ins</li>
+            </ul>
+          </div>
         </div>
-      </div>
+
+      </div><!-- /stacked right column -->
 
     </div><!-- /.mk-grid--halves (postiz + anomaly) -->
 
