@@ -35,12 +35,33 @@ $publishedMissing = $publishedResult['missing'];
 // ── Data: tile cache (per-site metrics) ───────────────────────────────────────
 $tileCacheFile = (defined('MK_CACHE_DIR') ? MK_CACHE_DIR : sys_get_temp_dir() . '/mk-cache')
                . '/marketing-tile.json';
-$tileCache = null;
+$tileCacheTtl  = 900; // 15 minutes — must match tile.php
+$tileCache     = null;
 if (file_exists($tileCacheFile)) {
     $raw = @file_get_contents($tileCacheFile);
     $decoded = $raw ? json_decode($raw, true) : null;
     if (is_array($decoded)) {
         $tileCache = $decoded;
+    }
+}
+
+// If cache is stale or missing, fire a background refresh via loopback so the
+// next page load (or this one if tile.php is fast) gets fresh X/GA4/GSC data.
+$tileCacheAge = $tileCache ? (time() - ($tileCache['_cached_at'] ?? 0)) : PHP_INT_MAX;
+if ($tileCacheAge > $tileCacheTtl && php_sapi_name() !== 'cli') {
+    $mkTileScheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'ssl://' : '';
+    $mkTileHost   = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $mkTilePort   = empty($mkTileScheme) ? 80 : 443;
+    $mkTileSock   = @fsockopen($mkTileScheme . $mkTileHost, $mkTilePort, $errno, $errstr, 2);
+    if ($mkTileSock) {
+        stream_set_blocking($mkTileSock, false);
+        fwrite($mkTileSock,
+            "GET /port/marketing/tile.php HTTP/1.0\r\n"
+            . "Host: {$mkTileHost}\r\n"
+            . "Cookie: " . ($_SERVER['HTTP_COOKIE'] ?? '') . "\r\n"
+            . "Connection: close\r\n\r\n"
+        );
+        fclose($mkTileSock);
     }
 }
 
@@ -120,10 +141,11 @@ if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children
 $campaignData = $tileCache['campaign_data'] ?? null;
 
 // ── Data: Postiz queue status ─────────────────────────────────────────────────
-$postizQueueCount  = null;
-$postizError       = false;
-$postizConfigured  = false;
-$postizByPlatform  = [];
+$postizQueueCount       = null;
+$postizError            = false;
+$postizConfigured       = false;
+$postizByPlatform       = [];
+$recentPostizActivity   = [];
 
 // Support both MK_POSTIZ_URL/MK_POSTIZ_TOKEN (spec) and MK_BRIDGE_URL/MK_BRIDGE_TOKEN (local)
 $postizBaseUrl   = null;
@@ -165,6 +187,13 @@ if ($postizConfigured && $postizBaseUrl !== null && $postizAuthHeader !== null) 
             $postizQueueCount = count($queued);
             // Build per-platform breakdown
             $postizByPlatform = mkPostizByPlatform($posts);
+            // Extract last 5 published posts for Recent Activity
+            $mkPub = array_filter($posts, fn($p) => ($p['state'] ?? '') === 'PUBLISHED');
+            usort($mkPub, fn($a, $b) => strcmp(
+                $b['publishedAt'] ?? $b['createdAt'] ?? '',
+                $a['publishedAt'] ?? $a['createdAt'] ?? ''
+            ));
+            $recentPostizActivity = array_slice(array_values($mkPub), 0, 5);
         } else {
             $postizError = true;
         }
@@ -206,6 +235,23 @@ if ($postizConfigured && $postizBaseUrl !== null && $postizAuthHeader !== null) 
 function mkConvRate(int $sessions, int $signups): ?string {
     if ($sessions === 0) return null;
     return number_format($signups / $sessions * 100, 1) . '%';
+}
+
+/**
+ * Derive a human-readable platform name from a Postiz post object.
+ * Uses integration type/name/provider fields; falls back to 'Social'.
+ */
+function mkPostizPostPlatform(array $post): string {
+    $intg = $post['integration'] ?? [];
+    $type = strtolower($intg['type'] ?? $intg['provider'] ?? $intg['providerIdentifier'] ?? '');
+    if (str_contains($type, 'bluesky') || str_contains($type, 'bsky')) return 'Bluesky';
+    if (str_contains($type, 'mastodon'))                                return 'Mastodon';
+    if (str_contains($type, 'twitter') || $type === 'x' || str_contains($type, '_x_')) return 'X/Twitter';
+    $name = strtolower($intg['name'] ?? '');
+    if (str_contains($name, 'bluesky') || str_contains($name, 'bsky')) return 'Bluesky';
+    if (str_contains($name, 'mastodon') || str_contains($name, 'masto')) return 'Mastodon';
+    if (str_contains($name, 'twitter') || str_contains($name, ' x') || str_contains($name, 'x ')) return 'X/Twitter';
+    return 'Social';
 }
 
 /**
@@ -442,6 +488,17 @@ function mkRelativeTime(string $filename): string
         }
     }
     return '';
+}
+
+// Relative time for a Unix timestamp — sub-day granularity for Postiz activity.
+function mkRelativeTimeTs(int $ts): string
+{
+    $diff = time() - $ts;
+    if ($diff < 3600)      return (int)floor($diff / 60) . 'm ago';
+    if ($diff < 86400)     return (int)floor($diff / 3600) . 'h ago';
+    if ($diff < 86400 * 2) return 'yesterday';
+    if ($diff < 86400 * 7) return (int)floor($diff / 86400) . 'd ago';
+    return (int)floor($diff / (86400 * 7)) . 'wk ago';
 }
 
 // ── Anomaly checks ────────────────────────────────────────────────────────────
@@ -1362,10 +1419,37 @@ renderHeader('Marketing', [
     <div class="mk-card" style="margin-bottom: var(--space-8);">
       <div class="mk-card__header">
         <h3 class="mk-card__title">Last 5 Published Posts</h3>
-        <a href="/port/marketing/published.php" class="mk-card__link">View all</a>
+        <?php if (!empty($recentPostizActivity) && $postizBaseUrl): ?>
+          <a href="<?= h(rtrim($postizBaseUrl, '/')) ?>" class="mk-card__link" target="_blank" rel="noopener">View in Postiz</a>
+        <?php else: ?>
+          <a href="/port/marketing/published.php" class="mk-card__link">View all</a>
+        <?php endif; ?>
       </div>
       <div class="mk-card__body">
-        <?php if ($publishedError): ?>
+        <?php if (!empty($recentPostizActivity)): ?>
+          <!-- Postiz-sourced activity (preferred when bridge/API is configured) -->
+          <ul class="mk-file-list">
+            <?php foreach ($recentPostizActivity as $pPost): ?>
+              <?php
+                $pPlatform   = mkPostizPostPlatform($pPost);
+                $pBadge      = mkPlatformBadgeClass($pPlatform);
+                $pContent    = $pPost['content'] ?? $pPost['posts'][0]['content'] ?? '';
+                $pPreview    = mb_strlen($pContent) > 80
+                    ? mb_substr(mkCalendarStripHtml($pContent), 0, 80) . '…'
+                    : mkCalendarStripHtml($pContent);
+                $pTs         = strtotime($pPost['publishedAt'] ?? $pPost['createdAt'] ?? '');
+                $pTime       = $pTs ? mkRelativeTimeTs($pTs) : '';
+              ?>
+              <li class="mk-file-list__item">
+                <span class="mk-badge mk-badge--<?= h($pBadge) ?>"><?= h($pPlatform) ?></span>
+                <span class="mk-file-list__name"><?= h($pPreview ?: '(no content)') ?></span>
+                <?php if ($pTime !== ''): ?>
+                  <span class="mk-file-list__time"><?= h($pTime) ?></span>
+                <?php endif; ?>
+              </li>
+            <?php endforeach; ?>
+          </ul>
+        <?php elseif ($publishedError): ?>
           <p class="mk-notice mk-notice--warn">Could not reach GitHub API.</p>
         <?php elseif ($publishedMissing || empty($recentPublished)): ?>
           <p class="mk-empty">No recent activity.</p>
