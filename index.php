@@ -16,70 +16,23 @@ declare(strict_types=1);
 require_once __DIR__ . '/config.php';
 require_once PORT_ROOT . '/shared/shell.php';
 require_once __DIR__ . '/gh-helper.php';
+require_once __DIR__ . '/local-fs-reader.php';
 
 $user = requireModuleAccess('marketing', 'viewer');
 
 // ── Data: draft queue count ───────────────────────────────────────────────────
-$queueUrl  = 'https://api.github.com/repos/cobenrogers/glyc/contents/docs/marketing/workspace/queue';
-$queueData = mkGhGet($queueUrl, 120);
-$draftCount   = 0;
-$queueError   = false;
-$queueMissing = false;
-
-if ($queueData === null) {
-    $queueError = true;
-} elseif (isset($queueData['message'])) {
-    $queueMissing = true;
-} else {
-    $files = array_filter($queueData, fn($i) => isset($i['type']) && $i['type'] === 'file');
-    $dirs  = array_filter($queueData, fn($i) => isset($i['type']) && $i['type'] === 'dir');
-    if (!empty($dirs) && empty($files)) {
-        foreach ($dirs as $dir) {
-            $subData = mkGhGet($dir['url'], 120);
-            if (is_array($subData)) {
-                $draftCount += count(array_filter($subData, fn($i) => isset($i['type']) && $i['type'] === 'file'));
-            }
-        }
-    } else {
-        $draftCount = count($files);
-    }
-}
+$draftResult  = mkLocalDraftCount();
+$draftCount   = $draftResult['count'];
+$queueError   = $draftResult['error'];
+$queueMissing = $draftResult['missing'];
 
 // ── Data: recent published posts ──────────────────────────────────────────────
-$publishedUrl     = 'https://api.github.com/repos/cobenrogers/glyc/contents/docs/marketing/workspace/published';
-$publishedData    = mkGhGet($publishedUrl, 300);
-$recentPublished  = [];
-$publishedMissing = false;
-$publishedError   = false;
+$publishedResult  = mkLocalRecentPublished();
+$recentPublished  = $publishedResult['files'];
+$publishedError   = $publishedResult['error'];
+$publishedMissing = $publishedResult['missing'];
 
-if ($publishedData === null) {
-    $publishedError = true;
-} elseif (isset($publishedData['message'])) {
-    $publishedMissing = true;
-} else {
-    $allFiles = [];
-    foreach ($publishedData as $item) {
-        if (!isset($item['type'])) {
-            continue;
-        }
-        if ($item['type'] === 'file') {
-            $allFiles[] = $item;
-        } elseif ($item['type'] === 'dir') {
-            $subData = mkGhGet($item['url'], 300);
-            if (is_array($subData)) {
-                foreach ($subData as $sub) {
-                    if (isset($sub['type']) && $sub['type'] === 'file') {
-                        $allFiles[] = $sub;
-                    }
-                }
-            }
-        }
-    }
-    usort($allFiles, fn($a, $b) => strcmp($b['name'], $a['name']));
-    $recentPublished = array_slice($allFiles, 0, 5);
-}
-
-// ── Data: tile cache (BlueSky followers, per-site metrics) ────────────────────
+// ── Data: tile cache (per-site metrics) ───────────────────────────────────────
 $tileCacheFile = (defined('MK_CACHE_DIR') ? MK_CACHE_DIR : sys_get_temp_dir() . '/mk-cache')
                . '/marketing-tile.json';
 $tileCache = null;
@@ -91,34 +44,6 @@ if (file_exists($tileCacheFile)) {
     }
 }
 
-// Extract BlueSky followers from top-level tile metrics
-$bskyFollowersShared = null;
-if ($tileCache && isset($tileCache['metrics']) && is_array($tileCache['metrics'])) {
-    foreach ($tileCache['metrics'] as $metric) {
-        if (isset($metric['label']) && stripos($metric['label'], 'bluesky') !== false) {
-            $bskyFollowersShared = $metric['value'];
-            break;
-        }
-    }
-}
-
-// Shared BlueSky account (bennernet.bsky.social) — see tile cache top-level metrics.
-// Per-site handles will be added in #72 (IBD Movement dedicated account).
-function mkFetchBskyFollowers(string $handle): ?int {
-    $url  = 'https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=' . urlencode($handle);
-    $ctx  = stream_context_create(['http' => [
-        'method'        => 'GET',
-        'header'        => 'User-Agent: bennernet-marketing/1.0',
-        'timeout'       => 8,
-        'ignore_errors' => true,
-    ]]);
-    $body = @file_get_contents($url, false, $ctx);
-    if (!$body) {
-        return null;
-    }
-    $data = json_decode($body, true);
-    return isset($data['followersCount']) ? (int)$data['followersCount'] : null;
-}
 
 // ── Data: per-site metrics extracted from tile cache children ────────────────
 $glycPostsPublished = null;
@@ -127,6 +52,8 @@ $glycMastoFollowers = null;
 $ibdMastoFollowers  = null;
 $glycGscClicks      = null;
 $ibdGscClicks       = null;
+$glycBskyFollowers  = null;
+$ibdBskyFollowers   = null;
 if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children'])) {
     foreach ($tileCache['children'] as $child) {
         $name    = $child['name'] ?? '';
@@ -147,6 +74,9 @@ if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children
             } elseif (stripos($label, 'organic clicks') !== false) {
                 if ($isGlyc) $glycGscClicks = $value;
                 if ($isIbd)  $ibdGscClicks  = $value;
+            } elseif (stripos($label, 'bluesky followers') !== false) {
+                if ($isGlyc) $glycBskyFollowers = $value;
+                if ($isIbd)  $ibdBskyFollowers  = $value;
             }
         }
     }
@@ -604,6 +534,14 @@ renderHeader('Marketing', [
                 <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
               <?php endif; ?>
             </li>
+            <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">Bluesky followers</span>
+              <?php if ($glycBskyFollowers !== null): ?>
+                <span class="mk-metric-list__value"><?= h((string)$glycBskyFollowers) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
           </ul>
         </div>
       </div>
@@ -638,6 +576,14 @@ renderHeader('Marketing', [
               <span class="mk-metric-list__label">Mastodon followers</span>
               <?php if ($ibdMastoFollowers !== null): ?>
                 <span class="mk-metric-list__value"><?= h((string)$ibdMastoFollowers) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">Bluesky followers</span>
+              <?php if ($ibdBskyFollowers !== null): ?>
+                <span class="mk-metric-list__value"><?= h((string)$ibdBskyFollowers) ?></span>
               <?php else: ?>
                 <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
               <?php endif; ?>
@@ -781,10 +727,10 @@ renderHeader('Marketing', [
         </div>
         <div class="mk-card__body">
           <?php if ($queueError): ?>
-            <p class="mk-notice mk-notice--warn">Could not reach GitHub API — check MK_GITHUB_TOKEN.</p>
+            <p class="mk-notice mk-notice--warn">Could not read drafts queue — check MK_WORKSPACE_PATH or MK_GITHUB_TOKEN.</p>
           <?php elseif ($queueMissing): ?>
-            <p class="mk-empty">No queue directory found in <code>cobenrogers/glyc</code> at
-              <code>docs/marketing/workspace/queue/</code> — create it to start using the drafts queue.</p>
+            <p class="mk-empty">No queue directory found — create
+              <code>docs/marketing/workspace/queue/</code> to start using the drafts queue.</p>
           <?php elseif ($draftCount === 0): ?>
             <p class="mk-empty">No drafts in queue.</p>
           <?php else: ?>
