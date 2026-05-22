@@ -346,11 +346,30 @@ function mkMastodonFollowers(string $instance, string $handle): ?array {
 // ── GSC — organic clicks per site via Search Console REST API ─────────────────
 
 /**
- * Fetch total clicks + impressions from the Search Console Data API v3.
- * Uses the same SA key as GA4 (MK_GA4_CREDENTIALS_PATH); site URL must be
- * in sc-domain: or https:// format matching the verified property.
+ * Pure parsing helper for a GSC searchAnalytics/query response array.
+ * Separated from mkGscTotals() so it can be unit-tested without HTTP.
  *
- * @return array{'clicks': int, 'impressions': int}|null
+ * @return array{'clicks': int, 'impressions': int, 'ctr': float|null, 'position': float|null}|null
+ */
+function mkGscParseRow(?array $data): ?array {
+    if (!is_array($data) || isset($data['error'])) {
+        return null;
+    }
+    $row = $data['rows'][0] ?? null;
+    return [
+        'clicks'      => (int)($row['clicks']      ?? 0),
+        'impressions' => (int)($row['impressions']  ?? 0),
+        'ctr'         => isset($row['ctr'])      ? (float)$row['ctr']      : null,
+        'position'    => isset($row['position']) ? (float)$row['position'] : null,
+    ];
+}
+
+/**
+ * Fetch total clicks, impressions, CTR, and avg position from the Search
+ * Console Data API v3.  Uses the same SA key as GA4 (MK_GA4_CREDENTIALS_PATH);
+ * site URL must be in sc-domain: or https:// format matching the verified property.
+ *
+ * @return array{'clicks': int, 'impressions': int, 'ctr': float|null, 'position': float|null}|null
  */
 function mkGscTotals(string $siteUrl, int $days = 7): ?array {
     $credPath = defined('MK_GA4_CREDENTIALS_PATH') ? MK_GA4_CREDENTIALS_PATH : null;
@@ -367,7 +386,12 @@ function mkGscTotals(string $siteUrl, int $days = 7): ?array {
     $startDate = date('Y-m-d', strtotime("-{$days} days"));
     $url       = 'https://searchconsole.googleapis.com/webmasters/v3/sites/'
                . urlencode($siteUrl) . '/searchAnalytics/query';
-    $body      = json_encode(['startDate' => $startDate, 'endDate' => $endDate, 'rowLimit' => 1]);
+    $body      = json_encode([
+        'startDate' => $startDate,
+        'endDate'   => $endDate,
+        'rowLimit'  => 1,
+        'metrics'   => ['clicks', 'impressions', 'ctr', 'position'],
+    ]);
 
     $ctx  = stream_context_create(['http' => [
         'method'        => 'POST',
@@ -378,16 +402,7 @@ function mkGscTotals(string $siteUrl, int $days = 7): ?array {
     ]]);
     $resp = @file_get_contents($url, false, $ctx);
     $data = $resp ? json_decode($resp, true) : null;
-    if (!is_array($data) || isset($data['error'])) {
-        return null;
-    }
-
-    // No rows = zero traffic (not an error)
-    $row = $data['rows'][0] ?? null;
-    return [
-        'clicks'      => (int)($row['clicks']      ?? 0),
-        'impressions' => (int)($row['impressions']  ?? 0),
-    ];
+    return mkGscParseRow($data);
 }
 
 // ── Fetch all data ────────────────────────────────────────────────────────────
@@ -452,7 +467,10 @@ function mkPostizQueued(?array $counts, string $integrationId): int {
 
 $glycPublished = mkPostizPublished($postizCounts, POSTIZ_ID_GLYC_MASTODON);
 $glycQueued    = mkPostizQueued($postizCounts, POSTIZ_ID_GLYC_MASTODON);
-$glycGscClicks = $gscGlyc !== null ? $gscGlyc['clicks'] : null;
+$glycGscClicks       = $gscGlyc !== null ? $gscGlyc['clicks']      : null;
+$glycGscImpressions  = $gscGlyc !== null ? $gscGlyc['impressions'] : null;
+$glycGscCtr          = $gscGlyc !== null ? $gscGlyc['ctr']         : null;
+$glycGscPosition     = $gscGlyc !== null ? $gscGlyc['position']    : null;
 
 $glycPostsDelta = null;
 if ($glycQueued > 0) {
@@ -464,8 +482,17 @@ $glycMetrics = [
         ? mkMetric('Users', $ga4Glyc['users'], null, 'raw', 'neutral')
         : mkMetricStub('Users'),
     $glycGscClicks !== null
-        ? mkMetric('Organic clicks', $glycGscClicks, null, 'raw', 'neutral')
-        : mkMetricStub('Organic clicks'),
+        ? mkMetric('GSC clicks', $glycGscClicks, null, 'raw', 'positive')
+        : mkMetricStub('GSC clicks'),
+    $glycGscImpressions !== null
+        ? mkMetric('GSC impressions', $glycGscImpressions, null, 'raw', 'positive')
+        : mkMetricStub('GSC impressions'),
+    $glycGscCtr !== null
+        ? mkMetric('GSC CTR', $glycGscCtr, null, 'raw', 'positive')
+        : mkMetricStub('GSC CTR'),
+    $glycGscPosition !== null
+        ? mkMetric('GSC avg position', $glycGscPosition, null, 'raw', 'negative')
+        : mkMetricStub('GSC avg position'),
     $mastoGlyc !== null
         ? mkMetric('Mast. followers', $mastoGlyc['followers'], null, 'raw', 'neutral')
         : mkMetricStub('Mast. followers'),
@@ -485,7 +512,10 @@ $glycStatus    = $glycSourcesOk ? 'online' : 'idle';
 
 $ibdPublished = mkPostizPublished($postizCounts, POSTIZ_ID_IBD_MASTODON);
 $ibdQueued    = mkPostizQueued($postizCounts, POSTIZ_ID_IBD_MASTODON);
-$ibdGscClicks = $gscIbd !== null ? $gscIbd['clicks'] : null;
+$ibdGscClicks         = $gscIbd !== null ? $gscIbd['clicks']      : null;
+$ibdGscImpressions    = $gscIbd !== null ? $gscIbd['impressions'] : null;
+$ibdGscCtr            = $gscIbd !== null ? $gscIbd['ctr']         : null;
+$ibdGscPosition       = $gscIbd !== null ? $gscIbd['position']    : null;
 
 $ibdPostsDelta = null;
 if ($ibdQueued > 0) {
@@ -497,8 +527,17 @@ $ibdMetrics = [
         ? mkMetric('Users', $ga4Ibd['users'], null, 'raw', 'neutral')
         : mkMetricStub('Users'),
     $ibdGscClicks !== null
-        ? mkMetric('Organic clicks', $ibdGscClicks, null, 'raw', 'neutral')
-        : mkMetricStub('Organic clicks'),
+        ? mkMetric('GSC clicks', $ibdGscClicks, null, 'raw', 'positive')
+        : mkMetricStub('GSC clicks'),
+    $ibdGscImpressions !== null
+        ? mkMetric('GSC impressions', $ibdGscImpressions, null, 'raw', 'positive')
+        : mkMetricStub('GSC impressions'),
+    $ibdGscCtr !== null
+        ? mkMetric('GSC CTR', $ibdGscCtr, null, 'raw', 'positive')
+        : mkMetricStub('GSC CTR'),
+    $ibdGscPosition !== null
+        ? mkMetric('GSC avg position', $ibdGscPosition, null, 'raw', 'negative')
+        : mkMetricStub('GSC avg position'),
     $mastoIbd !== null
         ? mkMetric('Mast. followers', $mastoIbd['followers'], null, 'raw', 'neutral')
         : mkMetricStub('Mast. followers'),

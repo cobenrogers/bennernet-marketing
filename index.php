@@ -565,6 +565,30 @@ renderHeader('Marketing', [
               <?php endif; ?>
             </li>
             <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">GSC impressions (7d)</span>
+              <?php if ($glycGscImpressions !== null): ?>
+                <span class="mk-metric-list__value"><?= h((string)$glycGscImpressions) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">GSC CTR (7d)</span>
+              <?php if ($glycGscCtr !== null): ?>
+                <span class="mk-metric-list__value"><?= h(number_format((float)$glycGscCtr * 100, 1) . '%') ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">GSC avg position (7d)</span>
+              <?php if ($glycGscPosition !== null): ?>
+                <span class="mk-metric-list__value"><?= h(number_format((float)$glycGscPosition, 1)) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
               <span class="mk-metric-list__label">GA4 users (7d)</span>
               <?php if ($glycGa4Users !== null): ?>
                 <span class="mk-metric-list__value"
@@ -624,6 +648,30 @@ renderHeader('Marketing', [
               <span class="mk-metric-list__label">GSC clicks (7d)</span>
               <?php if ($ibdGscClicks !== null): ?>
                 <span class="mk-metric-list__value"><?= h((string)$ibdGscClicks) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">GSC impressions (7d)</span>
+              <?php if ($ibdGscImpressions !== null): ?>
+                <span class="mk-metric-list__value"><?= h((string)$ibdGscImpressions) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">GSC CTR (7d)</span>
+              <?php if ($ibdGscCtr !== null): ?>
+                <span class="mk-metric-list__value"><?= h(number_format((float)$ibdGscCtr * 100, 1) . '%') ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">GSC avg position (7d)</span>
+              <?php if ($ibdGscPosition !== null): ?>
+                <span class="mk-metric-list__value"><?= h(number_format((float)$ibdGscPosition, 1)) ?></span>
               <?php else: ?>
                 <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
               <?php endif; ?>

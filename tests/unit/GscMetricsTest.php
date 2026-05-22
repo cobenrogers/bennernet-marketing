@@ -156,6 +156,72 @@ class GscMetricsTest extends TestCase
         $this->assertArrayHasKey('impressions', $result);
     }
 
+    // ── 4. New metrics: impressions, CTR, position ──────────────────────────
+
+    public function testGscTotalsRequestIncludesFourMetrics(): void
+    {
+        $body    = $this->buildGscRequestBodyWithMetrics(7);
+        $decoded = json_decode($body, true);
+        $this->assertArrayHasKey('metrics', $decoded, 'Request body must include a metrics key');
+        $metrics = $decoded['metrics'];
+        $this->assertContains('clicks',      $metrics);
+        $this->assertContains('impressions', $metrics);
+        $this->assertContains('ctr',         $metrics);
+        $this->assertContains('position',    $metrics);
+        $this->assertCount(4, $metrics);
+    }
+
+    public function testGscTotalsParsesCtrAndPosition(): void
+    {
+        $apiResponse = [
+            'rows' => [
+                ['clicks' => 42, 'impressions' => 1200, 'ctr' => 0.035, 'position' => 23.4],
+            ],
+        ];
+        $result = $this->parseGscResponse($apiResponse);
+        $this->assertNotNull($result);
+        $this->assertSame(42, $result['clicks']);
+        $this->assertSame(1200, $result['impressions']);
+        $this->assertEqualsWithDelta(0.035, $result['ctr'], 0.0001);
+        $this->assertEqualsWithDelta(23.4, $result['position'], 0.01);
+    }
+
+    public function testGscTotalsHandlesZeroRows(): void
+    {
+        $apiResponse = ['rows' => []];
+        $result = $this->parseGscResponse($apiResponse);
+        $this->assertNotNull($result, 'Empty rows should return zeros, not null');
+        $this->assertSame(0, $result['clicks']);
+        $this->assertSame(0, $result['impressions']);
+        $this->assertNull($result['ctr'],      'CTR should be null when no rows');
+        $this->assertNull($result['position'], 'Position should be null when no rows');
+    }
+
+    public function testGscTotalsReturnsNullOnError(): void
+    {
+        $apiResponse = ['error' => ['code' => 403, 'message' => 'Forbidden']];
+        $result = $this->parseGscResponse($apiResponse);
+        $this->assertNull($result, 'Error responses from GSC API must produce null');
+    }
+
+    public function testResultShapeHasAllFourKeys(): void
+    {
+        $apiResponse = ['rows' => [['clicks' => 10, 'impressions' => 100, 'ctr' => 0.1, 'position' => 5.0]]];
+        $result = $this->parseGscResponse($apiResponse);
+        $this->assertArrayHasKey('clicks',      $result);
+        $this->assertArrayHasKey('impressions', $result);
+        $this->assertArrayHasKey('ctr',         $result);
+        $this->assertArrayHasKey('position',    $result);
+    }
+
+    public function testCtrIsNullWhenMissingFromRow(): void
+    {
+        $apiResponse = ['rows' => [['clicks' => 5, 'impressions' => 50]]];
+        $result = $this->parseGscResponse($apiResponse);
+        $this->assertNull($result['ctr'], 'ctr must be null when not present in row');
+        $this->assertNull($result['position'], 'position must be null when not present in row');
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     /**
@@ -170,10 +236,25 @@ class GscMetricsTest extends TestCase
     }
 
     /**
-     * Mirror the response-parsing logic from mkGscTotals() so we can test it
+     * Reconstruct the GSC API request body with four metrics — same logic as mkGscTotals().
+     */
+    private function buildGscRequestBodyWithMetrics(int $days): string
+    {
+        $endDate   = date('Y-m-d', strtotime('-1 day'));
+        $startDate = date('Y-m-d', strtotime("-{$days} days"));
+        return json_encode([
+            'startDate' => $startDate,
+            'endDate'   => $endDate,
+            'rowLimit'  => 1,
+            'metrics'   => ['clicks', 'impressions', 'ctr', 'position'],
+        ]);
+    }
+
+    /**
+     * Mirror the response-parsing logic from mkGscParseRow() so we can test it
      * in isolation without triggering real HTTP calls or credential checks.
      *
-     * Returns ['clicks' => int, 'impressions' => int] or null on API error.
+     * Returns ['clicks' => int, 'impressions' => int, 'ctr' => float|null, 'position' => float|null] or null.
      */
     private function parseGscResponse(?array $data): ?array
     {
@@ -184,6 +265,8 @@ class GscMetricsTest extends TestCase
         return [
             'clicks'      => (int)($row['clicks']      ?? 0),
             'impressions' => (int)($row['impressions']  ?? 0),
+            'ctr'         => isset($row['ctr'])      ? (float)$row['ctr']      : null,
+            'position'    => isset($row['position']) ? (float)$row['position'] : null,
         ];
     }
 }
