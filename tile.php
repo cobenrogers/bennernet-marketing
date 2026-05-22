@@ -11,6 +11,7 @@
  *   - GSC           — organic clicks per site (LIVE, via ADC + gsc.py)
  *   - GA4           — users per site (STUB — not wired)
  *   - Mastodon      — followers per account (LIVE, public API per instance)
+ *   - X/Twitter     — follower count via API v2 (LIVE, per-site accounts)
  *
  * Cache: MK_CACHE_DIR/marketing-tile.json, 15-minute TTL.
  *
@@ -18,7 +19,7 @@
  * even on data errors — Mission Control's grid loop expects 200 from
  * every module's tile endpoint.
  *
- * Issues: cobenrogers/mission-control-wiki #57, #90
+ * Issues: cobenrogers/mission-control-wiki #57, #90, #91
  */
 
 declare(strict_types=1);
@@ -212,7 +213,7 @@ function mkGa4Users(string $propertyId): ?array {
         }
     }
 
-    // Build 14-element sparkline (oldest → newest) and sum last 7 days
+    // Build 14-element sparkline (oldest => newest) and sum last 7 days
     $sparkline  = [];
     $totalUsers = 0;
     $sevenStart = date('Ymd', strtotime('-6 days')); // inclusive: -6d .. today = 7 days
@@ -316,8 +317,8 @@ function mkBlueskyFollowers(string $handle): ?array {
 
 /**
  * Fetch Mastodon follower count for one account via the instance's public API.
- * No auth required — `/api/v1/accounts/lookup` is unauthenticated and returns
- * the `followers_count` field on the account object.
+ * No auth required — /api/v1/accounts/lookup is unauthenticated and returns
+ * the followers_count field on the account object.
  *
  * @param string $instance Hostname only, e.g. "mastodon.social"
  * @param string $handle   Local handle without the leading "@", e.g. "glyc"
@@ -340,6 +341,70 @@ function mkMastodonFollowers(string $instance, string $handle): ?array {
         'followers' => (int)$data['followers_count'],
         'handle'    => $handle,
         'instance'  => $instance,
+    ];
+}
+
+// ── X/Twitter — follower count via API v2 ────────────────────────────────────
+
+/**
+ * Exchange X API key + secret for an OAuth2 app-only Bearer token.
+ * Uses Basic Auth: Authorization: Basic base64(key:secret).
+ * Returns the access_token string or null on failure.
+ */
+function mkXBearerToken(): ?string {
+    $secrets = mkSecrets();
+    if (!$secrets || empty($secrets['x_api_key']) || empty($secrets['x_api_secret'])) {
+        return null;
+    }
+
+    $credentials = base64_encode($secrets['x_api_key'] . ':' . $secrets['x_api_secret']);
+    $ctx = stream_context_create(['http' => [
+        'method'        => 'POST',
+        'header'        => implode("\r\n", [
+            'Authorization: Basic ' . $credentials,
+            'Content-Type: application/x-www-form-urlencoded',
+        ]),
+        'content'       => 'grant_type=client_credentials',
+        'timeout'       => 10,
+        'ignore_errors' => true,
+    ]]);
+    $resp = @file_get_contents('https://api.twitter.com/oauth2/token', false, $ctx);
+    if (!$resp) {
+        return null;
+    }
+    $data = json_decode($resp, true);
+    return ($data['access_token'] ?? null) ? (string)$data['access_token'] : null;
+}
+
+/**
+ * Fetch X/Twitter follower count for a given username via API v2.
+ * Returns ['followers' => int, 'username' => string] or null on failure.
+ *
+ * @param string $username     X handle without the leading "@", e.g. "getglyc"
+ * @param string $bearerToken  OAuth2 app-only Bearer token from mkXBearerToken()
+ */
+function mkXFollowers(string $username, string $bearerToken): ?array {
+    if ($username === '' || $bearerToken === '') {
+        return null;
+    }
+
+    $url  = 'https://api.twitter.com/2/users/by/username/' . rawurlencode($username)
+          . '?user.fields=public_metrics';
+    $body = mkHttpGet($url, [
+        'Authorization: Bearer ' . $bearerToken,
+        'User-Agent: bennernet-marketing/1.0',
+    ], 10);
+    if (!$body) {
+        return null;
+    }
+    $data      = json_decode($body, true);
+    $followers = $data['data']['public_metrics']['followers_count'] ?? null;
+    if ($followers === null) {
+        return null;
+    }
+    return [
+        'followers' => (int)$followers,
+        'username'  => $username,
     ];
 }
 
@@ -414,10 +479,14 @@ $fetchStart = time();
 // - cmpbj9osm0008poec8q68tlgo  = IBD Movement (Bluesky / ibdmovement.bsky.social)
 // - cmouqqkw70001o08gts5rpnyb  = Ben Rogers (Mastodon / glyc profile)
 // - cmouqudgd0003o08gq5w1q3jj  = The IBD Movement (Mastodon / ibdmovement profile)
+// - cmpbr9le70003mo8mzzg84o2d  = Glyc (X / getglyc)
+// - cmpbr6c0n0001mo8mj5m2d3hx  = IBD Movement (X / IBDMovement)
 const POSTIZ_ID_GLYC_MASTODON = 'cmouqqkw70001o08gts5rpnyb';
 const POSTIZ_ID_IBD_MASTODON  = 'cmouqudgd0003o08gq5w1q3jj';
 const POSTIZ_ID_GLYC_BLUESKY  = 'cmouj99190001pi8h1f0upfga';
 const POSTIZ_ID_IBD_BLUESKY   = 'cmpbj9osm0008poec8q68tlgo';
+const POSTIZ_ID_GLYC_X        = 'cmpbr9le70003mo8mzzg84o2d';
+const POSTIZ_ID_IBD_X         = 'cmpbr6c0n0001mo8mj5m2d3hx';
 
 $postizCounts = mkPostizPostCounts();
 
@@ -439,6 +508,13 @@ $mastoIbd     = mkMastodonFollowers(
     defined('MK_MASTODON_INSTANCE_IBD') ? MK_MASTODON_INSTANCE_IBD : '',
     defined('MK_MASTODON_HANDLE_IBD')   ? MK_MASTODON_HANDLE_IBD   : ''
 );
+
+// X/Twitter follower counts (one Bearer token shared across both accounts)
+$xUsername_glyc = $secrets['x_username_glyc'] ?? 'getglyc';
+$xUsername_ibd  = $secrets['x_username_ibd']  ?? 'IBDMovement';
+$xBearerToken   = mkXBearerToken();
+$xGlyc          = $xBearerToken !== null ? mkXFollowers($xUsername_glyc, $xBearerToken) : null;
+$xIbd           = $xBearerToken !== null ? mkXFollowers($xUsername_ibd,  $xBearerToken) : null;
 
 // ── Build per-child metrics ───────────────────────────────────────────────────
 
@@ -465,16 +541,23 @@ function mkPostizQueued(?array $counts, string $integrationId): int {
 
 // ── Glyc child ────────────────────────────────────────────────────────────────
 
-$glycPublished = mkPostizPublished($postizCounts, POSTIZ_ID_GLYC_MASTODON);
-$glycQueued    = mkPostizQueued($postizCounts, POSTIZ_ID_GLYC_MASTODON);
+$glycPublished  = mkPostizPublished($postizCounts, POSTIZ_ID_GLYC_MASTODON);
+$glycQueued     = mkPostizQueued($postizCounts, POSTIZ_ID_GLYC_MASTODON);
 $glycGscClicks       = $gscGlyc !== null ? $gscGlyc['clicks']      : null;
 $glycGscImpressions  = $gscGlyc !== null ? $gscGlyc['impressions'] : null;
 $glycGscCtr          = $gscGlyc !== null ? $gscGlyc['ctr']         : null;
 $glycGscPosition     = $gscGlyc !== null ? $gscGlyc['position']    : null;
+$glycXPublished = mkPostizPublished($postizCounts, POSTIZ_ID_GLYC_X);
+$glycXQueued    = mkPostizQueued($postizCounts, POSTIZ_ID_GLYC_X);
 
 $glycPostsDelta = null;
 if ($glycQueued > 0) {
     $glycPostsDelta = '+' . $glycQueued . ' scheduled';
+}
+
+$glycXPostsDelta = null;
+if ($glycXQueued > 0) {
+    $glycXPostsDelta = '+' . $glycXQueued . ' scheduled';
 }
 
 $glycMetrics = [
@@ -499,27 +582,40 @@ $glycMetrics = [
     $bskyGlyc !== null
         ? mkMetric('Bluesky followers', $bskyGlyc['followers'], null, 'raw', 'neutral')
         : mkMetricStub('Bluesky followers'),
+    $xGlyc !== null
+        ? mkMetric('X followers', $xGlyc['followers'], null, 'raw', 'neutral')
+        : mkMetricStub('X followers'),
     $glycPublished !== null
         ? mkMetric('Posts published', $glycPublished, $glycPostsDelta, 'raw', 'neutral')
         : mkMetricStub('Posts published'),
+    $glycXPublished !== null
+        ? mkMetric('X posts published', $glycXPublished, $glycXPostsDelta, 'raw', 'neutral')
+        : mkMetricStub('X posts published'),
 ];
 
 // Glyc status: online if we have at least one live source
-$glycSourcesOk = ($glycGscClicks !== null) || ($glycPublished !== null) || ($mastoGlyc !== null) || ($bskyGlyc !== null);
+$glycSourcesOk = ($glycGscClicks !== null) || ($glycPublished !== null) || ($mastoGlyc !== null) || ($bskyGlyc !== null) || ($xGlyc !== null);
 $glycStatus    = $glycSourcesOk ? 'online' : 'idle';
 
 // ── IBD child ─────────────────────────────────────────────────────────────────
 
-$ibdPublished = mkPostizPublished($postizCounts, POSTIZ_ID_IBD_MASTODON);
-$ibdQueued    = mkPostizQueued($postizCounts, POSTIZ_ID_IBD_MASTODON);
+$ibdPublished  = mkPostizPublished($postizCounts, POSTIZ_ID_IBD_MASTODON);
+$ibdQueued     = mkPostizQueued($postizCounts, POSTIZ_ID_IBD_MASTODON);
 $ibdGscClicks         = $gscIbd !== null ? $gscIbd['clicks']      : null;
 $ibdGscImpressions    = $gscIbd !== null ? $gscIbd['impressions'] : null;
 $ibdGscCtr            = $gscIbd !== null ? $gscIbd['ctr']         : null;
 $ibdGscPosition       = $gscIbd !== null ? $gscIbd['position']    : null;
+$ibdXPublished = mkPostizPublished($postizCounts, POSTIZ_ID_IBD_X);
+$ibdXQueued    = mkPostizQueued($postizCounts, POSTIZ_ID_IBD_X);
 
 $ibdPostsDelta = null;
 if ($ibdQueued > 0) {
     $ibdPostsDelta = '+' . $ibdQueued . ' scheduled';
+}
+
+$ibdXPostsDelta = null;
+if ($ibdXQueued > 0) {
+    $ibdXPostsDelta = '+' . $ibdXQueued . ' scheduled';
 }
 
 $ibdMetrics = [
@@ -544,12 +640,18 @@ $ibdMetrics = [
     $bskyIbd !== null
         ? mkMetric('Bluesky followers', $bskyIbd['followers'], null, 'raw', 'neutral')
         : mkMetricStub('Bluesky followers'),
+    $xIbd !== null
+        ? mkMetric('X followers', $xIbd['followers'], null, 'raw', 'neutral')
+        : mkMetricStub('X followers'),
     $ibdPublished !== null
         ? mkMetric('Posts published', $ibdPublished, $ibdPostsDelta, 'raw', 'neutral')
         : mkMetricStub('Posts published'),
+    $ibdXPublished !== null
+        ? mkMetric('X posts published', $ibdXPublished, $ibdXPostsDelta, 'raw', 'neutral')
+        : mkMetricStub('X posts published'),
 ];
 
-$ibdSourcesOk = ($ibdGscClicks !== null) || ($ibdPublished !== null) || ($mastoIbd !== null) || ($bskyIbd !== null);
+$ibdSourcesOk = ($ibdGscClicks !== null) || ($ibdPublished !== null) || ($mastoIbd !== null) || ($bskyIbd !== null) || ($xIbd !== null);
 $ibdStatus    = $ibdSourcesOk ? 'online' : 'idle';
 
 // ── Top-level status = worst-of-children ─────────────────────────────────────
