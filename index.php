@@ -50,10 +50,22 @@ $glycPostsPublished = null;
 $ibdPostsPublished  = null;
 $glycMastoFollowers = null;
 $ibdMastoFollowers  = null;
-$glycGscClicks      = null;
-$ibdGscClicks       = null;
+$glycGscClicks       = null;
+$ibdGscClicks        = null;
+$glycGscImpressions  = null;
+$ibdGscImpressions   = null;
+$glycGscCtr          = null;
+$ibdGscCtr           = null;
+$glycGscPosition     = null;
+$ibdGscPosition      = null;
 $glycBskyFollowers  = null;
 $ibdBskyFollowers   = null;
+$glycXFollowers     = null;
+$ibdXFollowers      = null;
+$glycGa4Users       = null;
+$ibdGa4Users        = null;
+$glycSparkline      = null;
+$ibdSparkline       = null;
 if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children'])) {
     foreach ($tileCache['children'] as $child) {
         $name    = $child['name'] ?? '';
@@ -71,21 +83,45 @@ if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children
             } elseif (stripos($label, 'mast') !== false) {
                 if ($isGlyc) $glycMastoFollowers = $value;
                 if ($isIbd)  $ibdMastoFollowers  = $value;
-            } elseif (stripos($label, 'organic clicks') !== false) {
+            } elseif (stripos($label, 'GSC clicks') !== false) {
                 if ($isGlyc) $glycGscClicks = $value;
                 if ($isIbd)  $ibdGscClicks  = $value;
+            } elseif (stripos($label, 'GSC impressions') !== false) {
+                if ($isGlyc) $glycGscImpressions = $value;
+                if ($isIbd)  $ibdGscImpressions  = $value;
+            } elseif (stripos($label, 'GSC CTR') !== false) {
+                if ($isGlyc) $glycGscCtr = $value;
+                if ($isIbd)  $ibdGscCtr  = $value;
+            } elseif (stripos($label, 'GSC avg position') !== false) {
+                if ($isGlyc) $glycGscPosition = $value;
+                if ($isIbd)  $ibdGscPosition  = $value;
             } elseif (stripos($label, 'bluesky followers') !== false) {
                 if ($isGlyc) $glycBskyFollowers = $value;
                 if ($isIbd)  $ibdBskyFollowers  = $value;
+            } elseif ($label === 'X followers') {
+                if ($isGlyc) $glycXFollowers = $value;
+                if ($isIbd)  $ibdXFollowers  = $value;
+            } elseif (stripos($label, 'users') !== false) {
+                if ($isGlyc) $glycGa4Users = $value;
+                if ($isIbd)  $ibdGa4Users  = $value;
             }
+        }
+        // Extract sparkline (14-day users)
+        $sparklineData = isset($child['sparkline']['data']) && is_array($child['sparkline']['data'])
+            ? $child['sparkline']['data']
+            : null;
+        if ($sparklineData !== null) {
+            if ($isGlyc) $glycSparkline = $sparklineData;
+            if ($isIbd)  $ibdSparkline  = $sparklineData;
         }
     }
 }
 
 // ── Data: Postiz queue status ─────────────────────────────────────────────────
-$postizQueueCount = null;
-$postizError      = false;
-$postizConfigured = false;
+$postizQueueCount  = null;
+$postizError       = false;
+$postizConfigured  = false;
+$postizByPlatform  = [];
 
 // Support both MK_POSTIZ_URL/MK_POSTIZ_TOKEN (spec) and MK_BRIDGE_URL/MK_BRIDGE_TOKEN (local)
 $postizBaseUrl   = null;
@@ -104,8 +140,8 @@ if (defined('MK_POSTIZ_URL') && MK_POSTIZ_URL !== '' &&
 }
 
 if ($postizConfigured && $postizBaseUrl !== null && $postizAuthHeader !== null) {
-    // Postiz requires startDate + endDate (ISO 8601); 7-day forward window captures the queue.
-    $qs = 'startDate=' . urlencode(date('c', strtotime('-1 day')))
+    // Date window: 7 days back through 7 days forward to capture PUBLISHED, ERROR, and QUEUE posts.
+    $qs = 'startDate=' . urlencode(date('c', strtotime('-7 days')))
         . '&endDate='  . urlencode(date('c', strtotime('+7 days')))
         . '&take=200';
     $postizUrl = $postizBaseUrl . '/api/public/v1/posts?' . $qs;
@@ -122,9 +158,11 @@ if ($postizConfigured && $postizBaseUrl !== null && $postizAuthHeader !== null) 
         $data  = json_decode($body, true);
         $posts = is_array($data) ? ($data['posts'] ?? (isset($data[0]) ? $data : null)) : null;
         if (is_array($posts)) {
-            // Filter to QUEUE only, client-side
+            // Count QUEUE posts for the summary badge
             $queued = array_filter($posts, fn($p) => ($p['state'] ?? '') === 'QUEUE');
             $postizQueueCount = count($queued);
+            // Build per-platform breakdown
+            $postizByPlatform = mkPostizByPlatform($posts);
         } else {
             $postizError = true;
         }
@@ -527,6 +565,16 @@ renderHeader('Marketing', [
               <?php endif; ?>
             </li>
             <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">GA4 users (7d)</span>
+              <?php if ($glycGa4Users !== null): ?>
+                <span class="mk-metric-list__value"
+                  <?php if ($glycSparkline !== null): ?>data-sparkline="<?= h(implode(',', $glycSparkline)) ?>"<?php endif; ?>
+                ><?= h((string)$glycGa4Users) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
               <span class="mk-metric-list__label">Mastodon followers</span>
               <?php if ($glycMastoFollowers !== null): ?>
                 <span class="mk-metric-list__value"><?= h((string)$glycMastoFollowers) ?></span>
@@ -538,6 +586,14 @@ renderHeader('Marketing', [
               <span class="mk-metric-list__label">Bluesky followers</span>
               <?php if ($glycBskyFollowers !== null): ?>
                 <span class="mk-metric-list__value"><?= h((string)$glycBskyFollowers) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">X followers</span>
+              <?php if ($glycXFollowers !== null): ?>
+                <span class="mk-metric-list__value"><?= h((string)$glycXFollowers) ?></span>
               <?php else: ?>
                 <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
               <?php endif; ?>
@@ -573,6 +629,16 @@ renderHeader('Marketing', [
               <?php endif; ?>
             </li>
             <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">GA4 users (7d)</span>
+              <?php if ($ibdGa4Users !== null): ?>
+                <span class="mk-metric-list__value"
+                  <?php if ($ibdSparkline !== null): ?>data-sparkline="<?= h(implode(',', $ibdSparkline)) ?>"<?php endif; ?>
+                ><?= h((string)$ibdGa4Users) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
               <span class="mk-metric-list__label">Mastodon followers</span>
               <?php if ($ibdMastoFollowers !== null): ?>
                 <span class="mk-metric-list__value"><?= h((string)$ibdMastoFollowers) ?></span>
@@ -584,6 +650,14 @@ renderHeader('Marketing', [
               <span class="mk-metric-list__label">Bluesky followers</span>
               <?php if ($ibdBskyFollowers !== null): ?>
                 <span class="mk-metric-list__value"><?= h((string)$ibdBskyFollowers) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">X followers</span>
+              <?php if ($ibdXFollowers !== null): ?>
+                <span class="mk-metric-list__value"><?= h((string)$ibdXFollowers) ?></span>
               <?php else: ?>
                 <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
               <?php endif; ?>
