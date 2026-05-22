@@ -42,7 +42,7 @@ class PostizPipelineTest extends TestCase
         return [
             'integration'  => ['id' => $integrationId],
             'state'        => $state,
-            'publishedAt'  => $publishedAt,
+            'publishDate'  => $publishedAt,
         ];
     }
 

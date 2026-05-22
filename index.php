@@ -190,8 +190,8 @@ if ($postizConfigured && $postizBaseUrl !== null && $postizAuthHeader !== null) 
             // Extract last 5 published posts for Recent Activity
             $mkPub = array_filter($posts, fn($p) => ($p['state'] ?? '') === 'PUBLISHED');
             usort($mkPub, fn($a, $b) => strcmp(
-                $b['publishedAt'] ?? $b['createdAt'] ?? '',
-                $a['publishedAt'] ?? $a['createdAt'] ?? ''
+                $b['publishDate'] ?? $b['publishedAt'] ?? $b['createdAt'] ?? '',
+                $a['publishDate'] ?? $a['publishedAt'] ?? $a['createdAt'] ?? ''
             ));
             $recentPostizActivity = array_slice(array_values($mkPub), 0, 5);
         } else {
@@ -291,7 +291,7 @@ function mkPostizByPlatform(array $posts): array
             continue;
         }
         $state       = $post['state'] ?? '';
-        $publishedAt = $post['publishedAt'] ?? ($post['createdAt'] ?? null);
+        $publishedAt = $post['publishDate'] ?? ($post['publishedAt'] ?? ($post['createdAt'] ?? null));
         $postTs      = $publishedAt !== null ? strtotime($publishedAt) : false;
 
         if ($state === 'QUEUE') {
@@ -1443,7 +1443,7 @@ renderHeader('Marketing', [
                 $pPreview    = mb_strlen($pContent) > 80
                     ? mb_substr(mkCalendarStripHtml($pContent), 0, 80) . '…'
                     : mkCalendarStripHtml($pContent);
-                $pTs         = strtotime($pPost['publishedAt'] ?? $pPost['createdAt'] ?? '');
+                $pTs         = strtotime($pPost['publishDate'] ?? $pPost['publishedAt'] ?? $pPost['createdAt'] ?? '');
                 $pTime       = $pTs ? mkRelativeTimeTs($pTs) : '';
               ?>
               <li class="mk-file-list__item">
