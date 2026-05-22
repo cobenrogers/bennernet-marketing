@@ -117,6 +117,8 @@ if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children
     }
 }
 
+$campaignData = $tileCache['campaign_data'] ?? null;
+
 // ── Data: Postiz queue status ─────────────────────────────────────────────────
 $postizQueueCount  = null;
 $postizError       = false;
@@ -169,7 +171,42 @@ if ($postizConfigured && $postizBaseUrl !== null && $postizAuthHeader !== null) 
     }
 }
 
+// ── Data: upcoming calendar (next 14 days, QUEUE posts) ──────────────────
+$calendarPosts = [];
+$calendarError = false;
+if ($postizConfigured && $postizBaseUrl !== null && $postizAuthHeader !== null) {
+    $calStart = date('Y-m-d\TH:i:s\Z');
+    $calEnd   = date('Y-m-d\TH:i:s\Z', strtotime('+14 days'));
+    $calUrl   = $postizBaseUrl . '/api/public/v1/posts?startDate=' . urlencode($calStart) . '&endDate=' . urlencode($calEnd);
+    $calCtx   = stream_context_create(['http' => [
+        'method'        => 'GET',
+        'header'        => $postizAuthHeader . "\r\n",
+        'timeout'       => 8,
+        'ignore_errors' => true,
+    ]]);
+    $calRaw  = @file_get_contents($calUrl, false, $calCtx);
+    $calData = $calRaw ? json_decode($calRaw, true) : null;
+    if (is_array($calData) && isset($calData['posts'])) {
+        $allCalPosts = $calData['posts'];
+        // Filter to QUEUE only, sort ascending by publishDate
+        $calendarPosts = array_filter($allCalPosts, fn($p) => ($p['state'] ?? '') === 'QUEUE');
+        usort($calendarPosts, fn($a, $b) => strcmp($a['publishDate'] ?? '', $b['publishDate'] ?? ''));
+        $calendarPosts = array_values($calendarPosts);
+    } elseif ($postizConfigured) {
+        $calendarError = true;
+    }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Calculate conversion rate as a formatted percentage string.
+ * Returns null when sessions = 0 to signal a "—" display.
+ */
+function mkConvRate(int $sessions, int $signups): ?string {
+    if ($sessions === 0) return null;
+    return number_format($signups / $sessions * 100, 1) . '%';
+}
 
 /**
  * Group a Postiz posts array by known integration platform keys.
@@ -273,6 +310,123 @@ function mkPlatformBadgeClass(string $platform): string {
 }
 
 /**
+ * Compute a channel health status string from Postiz error count and last published timestamp.
+ *
+ * Returns 'healthy', 'stale', or 'error'.
+ * Issue: cobenrogers/bennernet-marketing#95
+ */
+function mkChannelStatus(?int $errors7d, ?string $lastPublished): string {
+    if ($errors7d !== null && $errors7d > 0) return 'error';
+    if ($lastPublished === null) return 'stale';
+    $age = (time() - strtotime($lastPublished)) / 86400;
+    return $age <= 14 ? 'healthy' : 'stale';
+}
+
+/**
+ * Check for Postiz ERROR posts in the last 7 days.
+ *
+ * Issue: cobenrogers/bennernet-marketing#98
+ */
+function mkCheckPostizErrors(array $postizByPlatform): array {
+    $errorPlatforms = [];
+    foreach ($postizByPlatform as $key => $data) {
+        if (($data['errors_7d'] ?? 0) > 0) {
+            $errorPlatforms[] = $key . ' (' . $data['errors_7d'] . ' error' . ($data['errors_7d'] > 1 ? 's' : '') . ')';
+        }
+    }
+    if (empty($errorPlatforms)) {
+        return ['ok' => true, 'message' => 'No Postiz errors in the last 7 days.', 'severity' => 'info'];
+    }
+    $n = array_sum(array_column($postizByPlatform, 'errors_7d'));
+    return [
+        'ok'       => false,
+        'message'  => "⚠️ {$n} Postiz ERROR post(s) on " . implode(', ', $errorPlatforms) . " — manual re-post needed",
+        'severity' => 'error',
+    ];
+}
+
+/**
+ * Check for a GSC clicks week-over-week drop of more than 25%.
+ *
+ * Issue: cobenrogers/bennernet-marketing#98
+ */
+function mkCheckGscDrop(?int $currentClicks, ?int $priorClicks, string $site): array {
+    if ($currentClicks === null || $priorClicks === null || $priorClicks === 0) {
+        return ['ok' => true, 'message' => "GSC clicks data unavailable for {$site}.", 'severity' => 'info'];
+    }
+    $drop = ($priorClicks - $currentClicks) / $priorClicks;
+    if ($drop > 0.25) {
+        $pct = round($drop * 100);
+        return [
+            'ok'       => false,
+            'message'  => "📉 GSC clicks down {$pct}% week-over-week for {$site}",
+            'severity' => 'warn',
+        ];
+    }
+    return ['ok' => true, 'message' => "GSC clicks stable for {$site}.", 'severity' => 'info'];
+}
+
+/**
+ * Check for overdue engagement check-ins in the engagement log.
+ *
+ * Issue: cobenrogers/bennernet-marketing#98
+ */
+function mkCheckEngagementOverdue(): array {
+    $wsPath = defined('MK_WORKSPACE_PATH') ? MK_WORKSPACE_PATH : null;
+    if (!$wsPath) {
+        return ['ok' => true, 'message' => 'Workspace path not configured.', 'severity' => 'info'];
+    }
+    $logPath = rtrim($wsPath, '/') . '/tracking/engagement-log.md';
+    if (!file_exists($logPath)) {
+        return ['ok' => true, 'message' => 'Engagement log not found.', 'severity' => 'info'];
+    }
+    $content = file_get_contents($logPath);
+    if ($content === false) {
+        return ['ok' => true, 'message' => 'Could not read engagement log.', 'severity' => 'info'];
+    }
+    // Parse check-in dates from table rows — format: | ... | YYYY-MM-DD | ... |
+    preg_match_all('/\|\s*(\d{4}-\d{2}-\d{2})\s*\|/', $content, $matches);
+    $today   = date('Y-m-d');
+    $overdue = 0;
+    foreach ($matches[1] as $dateStr) {
+        if ($dateStr < $today) {
+            $overdue++;
+        }
+    }
+    if ($overdue > 0) {
+        return [
+            'ok'       => false,
+            'message'  => "📋 {$overdue} overdue engagement check-in(s) — run engagement-check.py --all --update-log",
+            'severity' => 'warn',
+        ];
+    }
+    return ['ok' => true, 'message' => 'All engagement check-ins up to date.', 'severity' => 'info'];
+}
+
+/**
+ * Strip HTML tags and collapse whitespace for calendar post preview.
+ */
+function mkCalendarStripHtml(string $html): string {
+    return trim(preg_replace('/\s+/', ' ', strip_tags($html)));
+}
+
+/**
+ * Return a plain-text preview of post content, truncated to $maxLen chars.
+ */
+function mkCalendarPreview(string $content, int $maxLen = 100): string {
+    $plain = mkCalendarStripHtml($content);
+    return mb_strlen($plain) > $maxLen ? mb_substr($plain, 0, $maxLen) . '\u2026' : $plain;
+}
+
+/**
+ * Format an ISO 8601 datetime string for display in the calendar.
+ */
+function mkCalendarFormatDate(string $iso): string {
+    $ts = strtotime($iso);
+    return $ts !== false ? date('D M j · g:i A', $ts) : $iso;
+}
+
+/**
  * Extract a relative time label from a filename with a YYYY-MM-DD prefix.
  */
 function mkRelativeTime(string $filename): string
@@ -289,6 +443,15 @@ function mkRelativeTime(string $filename): string
     }
     return '';
 }
+
+// ── Anomaly checks ────────────────────────────────────────────────────────────
+$anomalyChecks = [
+    mkCheckPostizErrors($postizByPlatform),
+    mkCheckGscDrop($glycGscClicks, null, 'getglyc.com'),  // prior week data not cached yet
+    mkCheckGscDrop($ibdGscClicks,  null, 'ibdmovement.com'),
+    mkCheckEngagementOverdue(),
+];
+$activeFlags = array_filter($anomalyChecks, fn($c) => !$c['ok']);
 
 renderHeader('Marketing', [
     'user'        => $user,
@@ -566,6 +729,43 @@ renderHeader('Marketing', [
   display: none;
 }
 
+/* Channel health table */
+.mk-channel-health-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.mk-channel-health-table th,
+.mk-channel-health-table td {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+.mk-channel-health-table th {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-raised);
+}
+.mk-channel-health-table tr:last-child td {
+  border-bottom: none;
+}
+.mk-status--healthy {
+  color: var(--color-success);
+  font-weight: 600;
+}
+.mk-status--stale {
+  color: var(--color-warning);
+  font-weight: 600;
+}
+.mk-status--error {
+  color: var(--color-danger, #dc2626);
+  font-weight: 600;
+}
+.mk-channel-health-scroll {
+  overflow-x: auto;
+}
+
 /* Icon sizing */
 .icon {
   width: 16px;
@@ -573,6 +773,18 @@ renderHeader('Marketing', [
   flex-shrink: 0;
   vertical-align: middle;
 }
+
+/* Flags list */
+.mk-flag-list { list-style: none; padding: 0; margin: 0; }
+.mk-flag-list__item { padding: var(--space-2) 0; border-bottom: 1px solid var(--color-border); }
+.mk-flag-list__item:last-child { border-bottom: none; }
+.mk-flag-list__item--warn { color: var(--color-warn, #b45309); }
+.mk-flag-list__item--error { color: var(--color-error, #dc2626); }
+
+/* Recommendations list */
+.mk-recommendation-list { list-style: disc; padding-left: var(--space-6); margin: 0; }
+.mk-recommendation-list__item { padding: var(--space-1) 0; }
+.mk-recommendation-list__item--static { color: var(--muted, #6b7280); }
 </style>
 
 <div class="mk-dashboard">
@@ -803,21 +1015,147 @@ renderHeader('Marketing', [
         </div>
       </div>
 
-      <!-- Anomaly flag block -->
-      <div class="mk-card" aria-labelledby="card-anomaly-title">
-        <div class="mk-card__header">
-          <h3 class="mk-card__title" id="card-anomaly-title">
-            <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#alert-triangle"></use></svg>
-            Anomaly Check
-          </h3>
+      <!-- Flags + Recommendations stacked in the right column -->
+      <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+
+        <!-- Anomaly / Flags card -->
+        <div class="mk-card" aria-labelledby="card-anomaly-title">
+          <div class="mk-card__header">
+            <h3 class="mk-card__title" id="card-anomaly-title">
+              <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#alert-triangle"></use></svg>
+              Flags
+            </h3>
+          </div>
+          <div class="mk-card__body">
+            <?php if (empty($activeFlags)): ?>
+              <p class="mk-notice mk-notice--success">All clear — no anomalies detected.</p>
+            <?php else: ?>
+              <ul class="mk-flag-list">
+                <?php foreach ($activeFlags as $flag): ?>
+                  <li class="mk-flag-list__item mk-flag-list__item--<?= h($flag['severity']) ?>">
+                    <?= h($flag['message']) ?>
+                  </li>
+                <?php endforeach; ?>
+              </ul>
+            <?php endif; ?>
+          </div>
         </div>
-        <div class="mk-card__body">
-          <p class="mk-notice mk-notice--success">No anomalies detected.</p>
+
+        <!-- Recommendations card -->
+        <div class="mk-card" aria-labelledby="card-recommendations-title">
+          <div class="mk-card__header">
+            <h3 class="mk-card__title" id="card-recommendations-title">
+              <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#lightbulb"></use></svg>
+              Recommendations
+            </h3>
+          </div>
+          <div class="mk-card__body">
+            <ul class="mk-recommendation-list">
+              <?php foreach ($activeFlags as $flag): ?>
+                <?php
+                  // Derive action from flag message
+                  $action = str_contains($flag['message'], 'Postiz ERROR')
+                      ? 'Re-post failed content in Postiz'
+                      : (str_contains($flag['message'], 'GSC clicks down')
+                          ? 'Review GSC drop — check Search Console for indexing issues'
+                          : (str_contains($flag['message'], 'engagement check-in')
+                              ? 'Run engagement-check.py --all --update-log'
+                              : $flag['message']));
+                ?>
+                <li class="mk-recommendation-list__item"><?= h($action) ?></li>
+              <?php endforeach; ?>
+              <li class="mk-recommendation-list__item mk-recommendation-list__item--static">Review Drafts Queue for ready-to-publish content</li>
+              <li class="mk-recommendation-list__item mk-recommendation-list__item--static">Check upcoming calendar for scheduling gaps</li>
+              <li class="mk-recommendation-list__item mk-recommendation-list__item--static">Update engagement log after check-ins</li>
+            </ul>
+          </div>
         </div>
-      </div>
+
+      </div><!-- /stacked right column -->
 
     </div><!-- /.mk-grid--halves (postiz + anomaly) -->
 
+  </section>
+
+  <!-- ── Channel Health ──────────────────────────────────────────────────── -->
+  <section aria-labelledby="channel-health-heading">
+    <h2 class="mk-section-heading" id="channel-health-heading">
+      <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#activity"></use></svg>
+      Channel Health
+    </h2>
+    <div class="mk-card" style="margin-bottom: var(--space-8);">
+      <div class="mk-channel-health-scroll">
+        <?php
+          // Build row data for the 6 channels
+          $channelRows = [
+            ['platform' => 'Bluesky',  'badge' => 'bluesky',  'account' => 'Glyc',         'followers' => $glycBskyFollowers,  'platform_key' => 'glyc_bluesky'],
+            ['platform' => 'Bluesky',  'badge' => 'bluesky',  'account' => 'IBD Movement',  'followers' => $ibdBskyFollowers,   'platform_key' => 'ibd_bluesky'],
+            ['platform' => 'Mastodon', 'badge' => 'mastodon', 'account' => 'Glyc',         'followers' => $glycMastoFollowers, 'platform_key' => 'glyc_mastodon'],
+            ['platform' => 'Mastodon', 'badge' => 'mastodon', 'account' => 'IBD Movement',  'followers' => $ibdMastoFollowers,  'platform_key' => 'ibd_mastodon'],
+            ['platform' => 'X',        'badge' => 'twitter',  'account' => 'Glyc',         'followers' => $glycXFollowers,     'platform_key' => 'glyc_x'],
+            ['platform' => 'X',        'badge' => 'twitter',  'account' => 'IBD Movement',  'followers' => $ibdXFollowers,      'platform_key' => 'ibd_x'],
+          ];
+        ?>
+        <table class="mk-channel-health-table">
+          <thead>
+            <tr>
+              <th scope="col">Platform</th>
+              <th scope="col">Account</th>
+              <th scope="col">Followers</th>
+              <th scope="col">Posts (7d)</th>
+              <th scope="col">Errors (7d)</th>
+              <th scope="col">Last Post</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($channelRows as $row): ?>
+              <?php
+                $key          = $row['platform_key'];
+                $pData        = $postizByPlatform[$key] ?? null;
+                $queued       = $pData !== null ? $pData['queued']        : null;
+                $published7d  = $pData !== null ? $pData['published_7d']  : null;
+                $errors7d     = $pData !== null ? $pData['errors_7d']     : null;
+                $lastPublished = $pData !== null ? $pData['last_published'] : null;
+
+                $status     = mkChannelStatus(
+                    $errors7d,
+                    $lastPublished
+                );
+                $statusLabel = match ($status) {
+                    'healthy' => 'Healthy',
+                    'stale'   => 'Stale',
+                    'error'   => 'Error',
+                    default   => '—',
+                };
+
+                // Format last published as relative time
+                $lastPostDisplay = '—';
+                if ($lastPublished !== null) {
+                    $ts = strtotime($lastPublished);
+                    if ($ts !== false) {
+                        $diff = time() - $ts;
+                        if ($diff < 86400)          $lastPostDisplay = 'today';
+                        elseif ($diff < 86400 * 2)  $lastPostDisplay = 'yesterday';
+                        elseif ($diff < 86400 * 7)  $lastPostDisplay = (int)floor($diff / 86400) . 'd ago';
+                        else                        $lastPostDisplay = (int)floor($diff / (86400 * 7)) . 'wk ago';
+                    }
+                }
+              ?>
+              <tr>
+                <td><span class="mk-badge mk-badge--<?= h($row['badge']) ?>"><?= h($row['platform']) ?></span></td>
+                <td><?= h($row['account']) ?></td>
+                <td><?= $row['followers'] !== null ? h((string)$row['followers']) : '&mdash;' ?></td>
+                <td><?= $published7d !== null ? h((string)$published7d) : '&mdash;' ?></td>
+                <td><?= $errors7d !== null ? h((string)$errors7d) : '&mdash;' ?></td>
+                <td><?= h($lastPostDisplay) ?></td>
+                <td><span class="mk-status--<?= h($status) ?>"><?= h($statusLabel) ?></span></td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </section>
 
   <!-- ── Quick links ──────────────────────────────────────────────────────── -->
@@ -848,6 +1186,135 @@ renderHeader('Marketing', [
         Reports
       </span>
     </nav>
+  </section>
+
+  <!-- ── Campaign Performance ───────────────────────────────────────────── -->
+  <section aria-labelledby="campaign-heading">
+    <h2 class="mk-section-heading" id="campaign-heading">
+      <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#bar-chart-2"></use></svg>
+      Campaign Performance
+    </h2>
+    <div class="mk-card" style="margin-bottom: var(--space-8);">
+      <?php if ($campaignData === null): ?>
+        <div class="mk-card__body">
+          <p class="mk-empty">No campaign data available.</p>
+        </div>
+      <?php elseif ($campaignData === []): ?>
+        <div class="mk-card__body">
+          <p class="mk-empty">No campaign data yet — UTM links needed for attribution</p>
+        </div>
+      <?php else: ?>
+        <?php
+          $totalSessions = 0;
+          $totalSignups  = 0;
+          foreach ($campaignData as $row) {
+              $totalSessions += $row['sessions'];
+              $totalSignups  += $row['signups'];
+          }
+        ?>
+        <div class="mk-channel-health-scroll">
+          <table class="mk-channel-health-table">
+            <thead>
+              <tr>
+                <th scope="col">Source</th>
+                <th scope="col">Medium</th>
+                <th scope="col">Sessions (30d)</th>
+                <th scope="col">Sign-ups</th>
+                <th scope="col">Conv. Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($campaignData as $row): ?>
+                <?php $convRate = mkConvRate($row['sessions'], $row['signups']); ?>
+                <tr>
+                  <td><?= h($row['source']) ?></td>
+                  <td><?= h($row['medium']) ?></td>
+                  <td><?= h((string)$row['sessions']) ?></td>
+                  <td><?= h((string)$row['signups']) ?></td>
+                  <td><?= $convRate !== null ? h($convRate) : '&mdash;' ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="2"><strong>Total</strong></td>
+                <td><strong><?= h((string)$totalSessions) ?></strong></td>
+                <td><strong><?= h((string)$totalSignups) ?></strong></td>
+                <td><strong><?php
+                  $totalConv = mkConvRate($totalSessions, $totalSignups);
+                  echo $totalConv !== null ? h($totalConv) : '&mdash;';
+                ?></strong></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div class="mk-card__body" style="padding-top: var(--space-2); padding-bottom: var(--space-2);">
+          <p class="mk-stub-notice">Source: GA4 UTM attribution, getglyc.com only (30d)</p>
+        </div>
+      <?php endif; ?>
+    </div>
+  </section>
+
+  <!-- ── Upcoming Calendar ────────────────────────────────────────────────── -->
+  <section aria-labelledby="calendar-heading">
+    <h2 class="mk-section-heading" id="calendar-heading">
+      <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#calendar"></use></svg>
+      Upcoming Calendar
+    </h2>
+    <div class="mk-card" style="margin-bottom: var(--space-8);">
+      <div class="mk-card__header">
+        <h3 class="mk-card__title">Next 14 Days</h3>
+        <?php if ($postizConfigured && $postizBaseUrl !== null): ?>
+          <a href="<?= h($postizBaseUrl) ?>" class="mk-card__link" target="_blank" rel="noopener">Open Postiz</a>
+        <?php endif; ?>
+      </div>
+      <div class="mk-card__body">
+        <?php if (!$postizConfigured): ?>
+          <p class="mk-empty">Postiz not configured.</p>
+        <?php elseif ($calendarError): ?>
+          <p class="mk-notice mk-notice--warn">Could not load calendar — check Postiz connection.</p>
+        <?php elseif (empty($calendarPosts)): ?>
+          <p class="mk-empty">Nothing scheduled in the next 14 days.
+            <?php if ($postizBaseUrl !== null): ?>
+              <a href="<?= h($postizBaseUrl) ?>" target="_blank" rel="noopener">Open Postiz</a>
+            <?php endif; ?>
+          </p>
+        <?php else: ?>
+          <?php
+            $prevDate = null;
+            foreach ($calendarPosts as $cp):
+              $cpDate = '';
+              $cpTs = isset($cp['publishDate']) ? strtotime($cp['publishDate']) : false;
+              if ($cpTs !== false) {
+                  $cpDate = date('Y-m-d', $cpTs);
+              }
+              $showDivider = ($cpDate !== $prevDate);
+              $prevDate = $cpDate;
+              $cpPlatform   = mkInferPlatform(
+                  ($cp['integration']['providerIdentifier'] ?? '')
+                  ?: ($cp['integration']['name'] ?? '')
+                  ?: ($cp['content'][0]['group']['name'] ?? '')
+              );
+              $cpBadgeClass = mkPlatformBadgeClass($cpPlatform);
+              $cpContent    = $cp['content'][0]['content'] ?? ($cp['content'] ?? '');
+              if (is_array($cpContent)) {
+                  $cpContent = '';
+              }
+              $cpPreview    = mkCalendarPreview((string)$cpContent);
+              $cpFormatted  = isset($cp['publishDate']) ? mkCalendarFormatDate($cp['publishDate']) : '';
+          ?>
+            <?php if ($showDivider && $cpDate !== ''): ?>
+              <div class="mk-calendar-date-divider"><?= h(date('D M j', strtotime($cpDate))) ?></div>
+            <?php endif; ?>
+            <div class="mk-calendar-item">
+              <span class="mk-calendar-item__time"><?= h($cpFormatted) ?></span>
+              <span class="mk-badge mk-badge--<?= h($cpBadgeClass) ?>"><?= h($cpPlatform) ?></span>
+              <span class="mk-calendar-item__preview"><?= h($cpPreview) ?></span>
+            </div>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </div>
+    </div>
   </section>
 
   <!-- ── Recent Activity ──────────────────────────────────────────────────── -->
