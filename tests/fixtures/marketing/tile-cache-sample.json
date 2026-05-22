@@ -51,6 +51,20 @@
           "delta_direction": "neutral"
         },
         {
+          "label": "Bluesky followers",
+          "value": 143,
+          "delta": null,
+          "delta_format": "raw",
+          "delta_direction": "neutral"
+        },
+        {
+          "label": "X followers",
+          "value": 87,
+          "delta": null,
+          "delta_format": "raw",
+          "delta_direction": "neutral"
+        },
+        {
           "label": "Posts published",
           "value": 5,
           "delta": "+2 scheduled",
@@ -85,6 +99,20 @@
         {
           "label": "Mast. followers",
           "value": 61,
+          "delta": null,
+          "delta_format": "raw",
+          "delta_direction": "neutral"
+        },
+        {
+          "label": "Bluesky followers",
+          "value": 209,
+          "delta": null,
+          "delta_format": "raw",
+          "delta_direction": "neutral"
+        },
+        {
+          "label": "X followers",
+          "value": 312,
           "delta": null,
           "delta_format": "raw",
           "delta_direction": "neutral"
