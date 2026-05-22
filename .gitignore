@@ -1,3 +1,4 @@
 config.php
 /vendor/
 *.log
+.phpunit.result.cache
