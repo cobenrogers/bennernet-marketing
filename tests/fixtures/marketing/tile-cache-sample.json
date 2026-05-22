@@ -1,0 +1,108 @@
+{
+  "slug": "marketing",
+  "name": "Marketing & Analytics",
+  "icon": "megaphone",
+  "link": "/port/marketing/",
+  "status": "online",
+  "period": "Last 7 days",
+  "last_updated": "2026-05-22T10:00:00+00:00",
+  "data_freshness": "2026-05-22T10:00:00+00:00",
+  "stale_threshold_minutes": 2160,
+  "metrics": [
+    {
+      "label": "BlueSky followers",
+      "value": 412,
+      "delta": null,
+      "delta_format": "raw",
+      "delta_direction": "neutral"
+    }
+  ],
+  "sparkline": null,
+  "alerts": {
+    "count": 0,
+    "link": "/port/marketing/",
+    "severity_max": "info"
+  },
+  "children": [
+    {
+      "name": "getglyc.com",
+      "status": "online",
+      "link": "/port/marketing/?site=glyc",
+      "metrics": [
+        {
+          "label": "Users",
+          "value": 183,
+          "delta": null,
+          "delta_format": "raw",
+          "delta_direction": "neutral"
+        },
+        {
+          "label": "Organic clicks",
+          "value": 74,
+          "delta": null,
+          "delta_format": "raw",
+          "delta_direction": "neutral"
+        },
+        {
+          "label": "Mast. followers",
+          "value": 29,
+          "delta": null,
+          "delta_format": "raw",
+          "delta_direction": "neutral"
+        },
+        {
+          "label": "Posts published",
+          "value": 5,
+          "delta": "+2 scheduled",
+          "delta_format": "raw",
+          "delta_direction": "neutral"
+        }
+      ],
+      "sparkline": {
+        "label": "14-day users",
+        "data": [8, 11, 9, 14, 18, 12, 7, 10, 15, 20, 17, 13, 11, 9]
+      }
+    },
+    {
+      "name": "ibdmovement.com",
+      "status": "online",
+      "link": "/port/marketing/?site=ibd",
+      "metrics": [
+        {
+          "label": "Users",
+          "value": 547,
+          "delta": null,
+          "delta_format": "raw",
+          "delta_direction": "neutral"
+        },
+        {
+          "label": "Organic clicks",
+          "value": 312,
+          "delta": null,
+          "delta_format": "raw",
+          "delta_direction": "neutral"
+        },
+        {
+          "label": "Mast. followers",
+          "value": 61,
+          "delta": null,
+          "delta_format": "raw",
+          "delta_direction": "neutral"
+        },
+        {
+          "label": "Posts published",
+          "value": 3,
+          "delta": null,
+          "delta_format": "raw",
+          "delta_direction": "neutral"
+        }
+      ],
+      "sparkline": {
+        "label": "14-day users",
+        "data": [31, 28, 35, 40, 44, 38, 29, 33, 41, 52, 47, 39, 36, 34]
+      }
+    }
+  ],
+  "primary_metric": "412 BlueSky followers",
+  "detail": "glyc · ibd movement"
+}
