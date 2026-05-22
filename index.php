@@ -273,6 +273,19 @@ function mkPlatformBadgeClass(string $platform): string {
 }
 
 /**
+ * Compute a channel health status string from Postiz error count and last published timestamp.
+ *
+ * Returns 'healthy', 'stale', or 'error'.
+ * Issue: cobenrogers/bennernet-marketing#95
+ */
+function mkChannelStatus(?int $errors7d, ?string $lastPublished): string {
+    if ($errors7d !== null && $errors7d > 0) return 'error';
+    if ($lastPublished === null) return 'stale';
+    $age = (time() - strtotime($lastPublished)) / 86400;
+    return $age <= 14 ? 'healthy' : 'stale';
+}
+
+/**
  * Extract a relative time label from a filename with a YYYY-MM-DD prefix.
  */
 function mkRelativeTime(string $filename): string
@@ -566,6 +579,43 @@ renderHeader('Marketing', [
   display: none;
 }
 
+/* Channel health table */
+.mk-channel-health-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.mk-channel-health-table th,
+.mk-channel-health-table td {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+.mk-channel-health-table th {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-raised);
+}
+.mk-channel-health-table tr:last-child td {
+  border-bottom: none;
+}
+.mk-status--healthy {
+  color: var(--color-success);
+  font-weight: 600;
+}
+.mk-status--stale {
+  color: var(--color-warning);
+  font-weight: 600;
+}
+.mk-status--error {
+  color: var(--color-danger, #dc2626);
+  font-weight: 600;
+}
+.mk-channel-health-scroll {
+  overflow-x: auto;
+}
+
 /* Icon sizing */
 .icon {
   width: 16px;
@@ -818,6 +868,87 @@ renderHeader('Marketing', [
 
     </div><!-- /.mk-grid--halves (postiz + anomaly) -->
 
+  </section>
+
+  <!-- ── Channel Health ──────────────────────────────────────────────────── -->
+  <section aria-labelledby="channel-health-heading">
+    <h2 class="mk-section-heading" id="channel-health-heading">
+      <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#activity"></use></svg>
+      Channel Health
+    </h2>
+    <div class="mk-card" style="margin-bottom: var(--space-8);">
+      <div class="mk-channel-health-scroll">
+        <?php
+          // Build row data for the 6 channels
+          $channelRows = [
+            ['platform' => 'Bluesky',  'badge' => 'bluesky',  'account' => 'Glyc',         'followers' => $glycBskyFollowers,  'platform_key' => 'glyc_bluesky'],
+            ['platform' => 'Bluesky',  'badge' => 'bluesky',  'account' => 'IBD Movement',  'followers' => $ibdBskyFollowers,   'platform_key' => 'ibd_bluesky'],
+            ['platform' => 'Mastodon', 'badge' => 'mastodon', 'account' => 'Glyc',         'followers' => $glycMastoFollowers, 'platform_key' => 'glyc_mastodon'],
+            ['platform' => 'Mastodon', 'badge' => 'mastodon', 'account' => 'IBD Movement',  'followers' => $ibdMastoFollowers,  'platform_key' => 'ibd_mastodon'],
+            ['platform' => 'X',        'badge' => 'twitter',  'account' => 'Glyc',         'followers' => $glycXFollowers,     'platform_key' => 'glyc_x'],
+            ['platform' => 'X',        'badge' => 'twitter',  'account' => 'IBD Movement',  'followers' => $ibdXFollowers,      'platform_key' => 'ibd_x'],
+          ];
+        ?>
+        <table class="mk-channel-health-table">
+          <thead>
+            <tr>
+              <th scope="col">Platform</th>
+              <th scope="col">Account</th>
+              <th scope="col">Followers</th>
+              <th scope="col">Posts (7d)</th>
+              <th scope="col">Errors (7d)</th>
+              <th scope="col">Last Post</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($channelRows as $row): ?>
+              <?php
+                $key          = $row['platform_key'];
+                $pData        = $postizByPlatform[$key] ?? null;
+                $queued       = $pData !== null ? $pData['queued']        : null;
+                $published7d  = $pData !== null ? $pData['published_7d']  : null;
+                $errors7d     = $pData !== null ? $pData['errors_7d']     : null;
+                $lastPublished = $pData !== null ? $pData['last_published'] : null;
+
+                $status     = mkChannelStatus(
+                    $errors7d,
+                    $lastPublished
+                );
+                $statusLabel = match ($status) {
+                    'healthy' => 'Healthy',
+                    'stale'   => 'Stale',
+                    'error'   => 'Error',
+                    default   => '—',
+                };
+
+                // Format last published as relative time
+                $lastPostDisplay = '—';
+                if ($lastPublished !== null) {
+                    $ts = strtotime($lastPublished);
+                    if ($ts !== false) {
+                        $diff = time() - $ts;
+                        if ($diff < 86400)          $lastPostDisplay = 'today';
+                        elseif ($diff < 86400 * 2)  $lastPostDisplay = 'yesterday';
+                        elseif ($diff < 86400 * 7)  $lastPostDisplay = (int)floor($diff / 86400) . 'd ago';
+                        else                        $lastPostDisplay = (int)floor($diff / (86400 * 7)) . 'wk ago';
+                    }
+                }
+              ?>
+              <tr>
+                <td><span class="mk-badge mk-badge--<?= h($row['badge']) ?>"><?= h($row['platform']) ?></span></td>
+                <td><?= h($row['account']) ?></td>
+                <td><?= $row['followers'] !== null ? h((string)$row['followers']) : '&mdash;' ?></td>
+                <td><?= $published7d !== null ? h((string)$published7d) : '&mdash;' ?></td>
+                <td><?= $errors7d !== null ? h((string)$errors7d) : '&mdash;' ?></td>
+                <td><?= h($lastPostDisplay) ?></td>
+                <td><span class="mk-status--<?= h($status) ?>"><?= h($statusLabel) ?></span></td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </section>
 
   <!-- ── Quick links ──────────────────────────────────────────────────────── -->
