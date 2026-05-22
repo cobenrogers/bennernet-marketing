@@ -172,6 +172,66 @@ if ($postizConfigured && $postizBaseUrl !== null && $postizAuthHeader !== null) 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
+ * Group a Postiz posts array by known integration platform keys.
+ *
+ * Returns counts per platform: queued, published_7d, errors_7d, last_published.
+ * Uses the POSTIZ_ID_* constants defined in tile.php (loaded via tile cache bootstrap).
+ *
+ * Issue: cobenrogers/bennernet-marketing#94
+ */
+function mkPostizByPlatform(array $posts): array
+{
+    $idMap = [];
+    if (defined('POSTIZ_ID_GLYC_MASTODON')) $idMap[POSTIZ_ID_GLYC_MASTODON] = 'glyc_mastodon';
+    if (defined('POSTIZ_ID_IBD_MASTODON'))  $idMap[POSTIZ_ID_IBD_MASTODON]  = 'ibd_mastodon';
+    if (defined('POSTIZ_ID_GLYC_BLUESKY'))  $idMap[POSTIZ_ID_GLYC_BLUESKY]  = 'glyc_bluesky';
+    if (defined('POSTIZ_ID_IBD_BLUESKY'))   $idMap[POSTIZ_ID_IBD_BLUESKY]   = 'ibd_bluesky';
+    if (defined('POSTIZ_ID_GLYC_X'))        $idMap[POSTIZ_ID_GLYC_X]        = 'glyc_x';
+    if (defined('POSTIZ_ID_IBD_X'))         $idMap[POSTIZ_ID_IBD_X]         = 'ibd_x';
+
+    $result = [];
+    foreach (array_unique(array_values($idMap)) as $key) {
+        $result[$key] = ['queued' => 0, 'published_7d' => 0, 'errors_7d' => 0, 'last_published' => null];
+    }
+    foreach (['glyc_mastodon', 'ibd_mastodon', 'glyc_bluesky', 'ibd_bluesky'] as $key) {
+        if (!isset($result[$key])) {
+            $result[$key] = ['queued' => 0, 'published_7d' => 0, 'errors_7d' => 0, 'last_published' => null];
+        }
+    }
+
+    $cutoff7d = time() - 7 * 86400;
+
+    foreach ($posts as $post) {
+        $integrationId = $post['integration']['id'] ?? ($post['integrationId'] ?? '');
+        $platformKey   = $idMap[$integrationId] ?? null;
+        if ($platformKey === null) {
+            continue;
+        }
+        $state       = $post['state'] ?? '';
+        $publishedAt = $post['publishedAt'] ?? ($post['createdAt'] ?? null);
+        $postTs      = $publishedAt !== null ? strtotime($publishedAt) : false;
+
+        if ($state === 'QUEUE') {
+            $result[$platformKey]['queued']++;
+        } elseif ($state === 'PUBLISHED') {
+            if ($postTs !== false && $postTs >= $cutoff7d) {
+                $result[$platformKey]['published_7d']++;
+            }
+            $current = $result[$platformKey]['last_published'];
+            if ($publishedAt !== null && ($current === null || $publishedAt > $current)) {
+                $result[$platformKey]['last_published'] = $publishedAt;
+            }
+        } elseif ($state === 'ERROR') {
+            if ($postTs !== false && $postTs >= $cutoff7d) {
+                $result[$platformKey]['errors_7d']++;
+            }
+        }
+    }
+
+    return $result;
+}
+
+/**
  * Infer platform from a filename or path string.
  */
 function mkInferPlatform(string $nameOrPath): string {
