@@ -50,10 +50,16 @@ $glycPostsPublished = null;
 $ibdPostsPublished  = null;
 $glycMastoFollowers = null;
 $ibdMastoFollowers  = null;
-$glycGscClicks      = null;
-$ibdGscClicks       = null;
-$glycBskyFollowers  = null;
-$ibdBskyFollowers   = null;
+$glycGscClicks       = null;
+$ibdGscClicks        = null;
+$glycGscImpressions  = null;
+$ibdGscImpressions   = null;
+$glycGscCtr          = null;
+$ibdGscCtr           = null;
+$glycGscPosition     = null;
+$ibdGscPosition      = null;
+$glycBskyFollowers   = null;
+$ibdBskyFollowers    = null;
 if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children'])) {
     foreach ($tileCache['children'] as $child) {
         $name    = $child['name'] ?? '';
@@ -71,9 +77,18 @@ if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children
             } elseif (stripos($label, 'mast') !== false) {
                 if ($isGlyc) $glycMastoFollowers = $value;
                 if ($isIbd)  $ibdMastoFollowers  = $value;
-            } elseif (stripos($label, 'organic clicks') !== false) {
+            } elseif (stripos($label, 'GSC clicks') !== false) {
                 if ($isGlyc) $glycGscClicks = $value;
                 if ($isIbd)  $ibdGscClicks  = $value;
+            } elseif (stripos($label, 'GSC impressions') !== false) {
+                if ($isGlyc) $glycGscImpressions = $value;
+                if ($isIbd)  $ibdGscImpressions  = $value;
+            } elseif (stripos($label, 'GSC CTR') !== false) {
+                if ($isGlyc) $glycGscCtr = $value;
+                if ($isIbd)  $ibdGscCtr  = $value;
+            } elseif (stripos($label, 'GSC avg position') !== false) {
+                if ($isGlyc) $glycGscPosition = $value;
+                if ($isIbd)  $ibdGscPosition  = $value;
             } elseif (stripos($label, 'bluesky followers') !== false) {
                 if ($isGlyc) $glycBskyFollowers = $value;
                 if ($isIbd)  $ibdBskyFollowers  = $value;
@@ -132,6 +147,71 @@ if ($postizConfigured && $postizBaseUrl !== null && $postizAuthHeader !== null) 
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Group a Postiz posts array by known integration platform keys.
+ *
+ * Returns counts per platform: queued, published_7d, errors_7d, last_published.
+ * Uses the POSTIZ_ID_* constants defined in tile.php (loaded via tile cache bootstrap).
+ *
+ * Issue: cobenrogers/bennernet-marketing#94
+ */
+function mkPostizByPlatform(array $posts): array
+{
+    // Map integration ID -> platform key
+    $idMap = [];
+    if (defined('POSTIZ_ID_GLYC_MASTODON')) $idMap[POSTIZ_ID_GLYC_MASTODON] = 'glyc_mastodon';
+    if (defined('POSTIZ_ID_IBD_MASTODON'))  $idMap[POSTIZ_ID_IBD_MASTODON]  = 'ibd_mastodon';
+    if (defined('POSTIZ_ID_GLYC_BLUESKY'))  $idMap[POSTIZ_ID_GLYC_BLUESKY]  = 'glyc_bluesky';
+    if (defined('POSTIZ_ID_IBD_BLUESKY'))   $idMap[POSTIZ_ID_IBD_BLUESKY]   = 'ibd_bluesky';
+    if (defined('POSTIZ_ID_GLYC_X'))        $idMap[POSTIZ_ID_GLYC_X]        = 'glyc_x';
+    if (defined('POSTIZ_ID_IBD_X'))         $idMap[POSTIZ_ID_IBD_X]         = 'ibd_x';
+
+    // Initialise result structure for all known keys
+    $result = [];
+    foreach (array_unique(array_values($idMap)) as $key) {
+        $result[$key] = ['queued' => 0, 'published_7d' => 0, 'errors_7d' => 0, 'last_published' => null];
+    }
+    // Ensure all four core platforms are always present even if constants not defined
+    foreach (['glyc_mastodon', 'ibd_mastodon', 'glyc_bluesky', 'ibd_bluesky'] as $key) {
+        if (!isset($result[$key])) {
+            $result[$key] = ['queued' => 0, 'published_7d' => 0, 'errors_7d' => 0, 'last_published' => null];
+        }
+    }
+
+    $cutoff7d = time() - 7 * 86400;
+
+    foreach ($posts as $post) {
+        $integrationId = $post['integration']['id'] ?? ($post['integrationId'] ?? '');
+        $platformKey   = $idMap[$integrationId] ?? null;
+        if ($platformKey === null) {
+            continue;
+        }
+        $state = $post['state'] ?? '';
+        // publishedAt or createdAt fallback for date comparisons
+        $publishedAt = $post['publishedAt'] ?? ($post['createdAt'] ?? null);
+        $postTs      = $publishedAt !== null ? strtotime($publishedAt) : false;
+
+        if ($state === 'QUEUE') {
+            $result[$platformKey]['queued']++;
+        } elseif ($state === 'PUBLISHED') {
+            if ($postTs !== false && $postTs >= $cutoff7d) {
+                $result[$platformKey]['published_7d']++;
+            }
+            // Track most recent published timestamp
+            $current = $result[$platformKey]['last_published'];
+            if ($publishedAt !== null && ($current === null || $publishedAt > $current)) {
+                $result[$platformKey]['last_published'] = $publishedAt;
+            }
+        } elseif ($state === 'ERROR') {
+            if ($postTs !== false && $postTs >= $cutoff7d) {
+                $result[$platformKey]['errors_7d']++;
+            }
+        }
+    }
+
+    return $result;
+}
 
 /**
  * Infer platform from a filename or path string.
@@ -527,6 +607,30 @@ renderHeader('Marketing', [
               <?php endif; ?>
             </li>
             <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">GSC impressions (7d)</span>
+              <?php if ($glycGscImpressions !== null): ?>
+                <span class="mk-metric-list__value"><?= h((string)$glycGscImpressions) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">GSC CTR (7d)</span>
+              <?php if ($glycGscCtr !== null): ?>
+                <span class="mk-metric-list__value"><?= h(number_format((float)$glycGscCtr * 100, 1) . '%') ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">GSC avg position (7d)</span>
+              <?php if ($glycGscPosition !== null): ?>
+                <span class="mk-metric-list__value"><?= h(number_format((float)$glycGscPosition, 1)) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
               <span class="mk-metric-list__label">Mastodon followers</span>
               <?php if ($glycMastoFollowers !== null): ?>
                 <span class="mk-metric-list__value"><?= h((string)$glycMastoFollowers) ?></span>
@@ -568,6 +672,30 @@ renderHeader('Marketing', [
               <span class="mk-metric-list__label">GSC clicks (7d)</span>
               <?php if ($ibdGscClicks !== null): ?>
                 <span class="mk-metric-list__value"><?= h((string)$ibdGscClicks) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">GSC impressions (7d)</span>
+              <?php if ($ibdGscImpressions !== null): ?>
+                <span class="mk-metric-list__value"><?= h((string)$ibdGscImpressions) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">GSC CTR (7d)</span>
+              <?php if ($ibdGscCtr !== null): ?>
+                <span class="mk-metric-list__value"><?= h(number_format((float)$ibdGscCtr * 100, 1) . '%') ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">GSC avg position (7d)</span>
+              <?php if ($ibdGscPosition !== null): ?>
+                <span class="mk-metric-list__value"><?= h(number_format((float)$ibdGscPosition, 1)) ?></span>
               <?php else: ?>
                 <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
               <?php endif; ?>
