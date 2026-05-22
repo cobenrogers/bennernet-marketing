@@ -352,12 +352,21 @@ function mkMastodonFollowers(string $instance, string $handle): ?array {
  * Returns the access_token string or null on failure.
  */
 function mkXBearerToken(): ?string {
-    $secrets = mkSecrets();
-    if (!$secrets || empty($secrets['x_api_key']) || empty($secrets['x_api_secret'])) {
-        return null;
+    // Prefer config.php constants (production on Bluehost); fall back to sops (local dev).
+    if (defined('MK_X_API_KEY') && MK_X_API_KEY !== '' &&
+        defined('MK_X_API_SECRET') && MK_X_API_SECRET !== '') {
+        $apiKey    = MK_X_API_KEY;
+        $apiSecret = MK_X_API_SECRET;
+    } else {
+        $secrets = mkSecrets();
+        if (!$secrets || empty($secrets['x_api_key']) || empty($secrets['x_api_secret'])) {
+            return null;
+        }
+        $apiKey    = $secrets['x_api_key'];
+        $apiSecret = $secrets['x_api_secret'];
     }
 
-    $credentials = base64_encode($secrets['x_api_key'] . ':' . $secrets['x_api_secret']);
+    $credentials = base64_encode($apiKey . ':' . $apiSecret);
     $ctx = stream_context_create(['http' => [
         'method'        => 'POST',
         'header'        => implode("\r\n", [
@@ -510,8 +519,13 @@ $mastoIbd     = mkMastodonFollowers(
 );
 
 // X/Twitter follower counts (one Bearer token shared across both accounts)
-$xUsername_glyc = $secrets['x_username_glyc'] ?? 'getglyc';
-$xUsername_ibd  = $secrets['x_username_ibd']  ?? 'IBDMovement';
+// Username resolution: config.php constants > sops > hardcoded fallbacks.
+$xUsername_glyc = defined('MK_X_USERNAME_GLYC') && MK_X_USERNAME_GLYC !== ''
+    ? MK_X_USERNAME_GLYC
+    : ($secrets['x_username_glyc'] ?? 'getglyc');
+$xUsername_ibd  = defined('MK_X_USERNAME_IBD') && MK_X_USERNAME_IBD !== ''
+    ? MK_X_USERNAME_IBD
+    : ($secrets['x_username_ibd'] ?? 'IBDMovement');
 $xBearerToken   = mkXBearerToken();
 $xGlyc          = $xBearerToken !== null ? mkXFollowers($xUsername_glyc, $xBearerToken) : null;
 $xIbd           = $xBearerToken !== null ? mkXFollowers($xUsername_ibd,  $xBearerToken) : null;
