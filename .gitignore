@@ -1,4 +1,4 @@
-config.php
+/config.php
 /vendor/
 *.log
 .phpunit.result.cache
