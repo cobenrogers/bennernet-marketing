@@ -7,7 +7,7 @@
  *
  * Data sources:
  *   - Postiz        — posts published count per integration (LIVE, localhost:4007)
- *   - BlueSky       — follower count via public API (LIVE, bennernet.bsky.social)
+ *   - BlueSky       — follower count via public API (LIVE, per-site accounts)
  *   - GSC           — organic clicks per site (LIVE, via ADC + gsc.py)
  *   - GA4           — users per site (STUB — not wired)
  *   - Mastodon      — followers per account (LIVE, public API per instance)
@@ -18,7 +18,7 @@
  * even on data errors — Mission Control's grid loop expects 200 from
  * every module's tile endpoint.
  *
- * Issue: cobenrogers/mission-control-wiki #57
+ * Issues: cobenrogers/mission-control-wiki #57, #90
  */
 
 declare(strict_types=1);
@@ -287,12 +287,12 @@ function mkPostizPostCounts(): ?array {
 // ── BlueSky — follower count via public API ───────────────────────────────────
 
 /**
- * Fetch BlueSky follower count for the configured handle.
+ * Fetch BlueSky follower count for a given handle.
  * Returns ['followers' => int, 'handle' => string] or null on failure.
+ *
+ * @param string $handle BlueSky handle, e.g. "bennernet.bsky.social"
  */
-function mkBlueskyFollowers(): ?array {
-    $secrets = mkSecrets();
-    $handle  = $secrets['bluesky_handle'] ?? 'bennernet.bsky.social';
+function mkBlueskyFollowers(string $handle): ?array {
     if (empty($handle)) {
         return null;
     }
@@ -395,16 +395,24 @@ function mkGscTotals(string $siteUrl, int $days = 7): ?array {
 $fetchStart = time();
 
 // Postiz integration IDs (from running Postiz instance)
-// - cmouj99190001pi8h1f0upfga  = bennernet (Bluesky)
+// - cmouj99190001pi8h1f0upfga  = Glyc (Bluesky / bennernet.bsky.social)
+// - cmpbj9osm0008poec8q68tlgo  = IBD Movement (Bluesky / ibdmovement.bsky.social)
 // - cmouqqkw70001o08gts5rpnyb  = Ben Rogers (Mastodon / glyc profile)
 // - cmouqudgd0003o08gq5w1q3jj  = The IBD Movement (Mastodon / ibdmovement profile)
 const POSTIZ_ID_GLYC_MASTODON = 'cmouqqkw70001o08gts5rpnyb';
 const POSTIZ_ID_IBD_MASTODON  = 'cmouqudgd0003o08gq5w1q3jj';
-const POSTIZ_ID_BLUESKY       = 'cmouj99190001pi8h1f0upfga';
+const POSTIZ_ID_GLYC_BLUESKY  = 'cmouj99190001pi8h1f0upfga';
+const POSTIZ_ID_IBD_BLUESKY   = 'cmpbj9osm0008poec8q68tlgo';
 
 $postizCounts = mkPostizPostCounts();
-$bskyData     = mkBlueskyFollowers();
-$gscGlyc      = mkGscTotals('sc-domain:getglyc.com', 7);
+
+// Per-site Bluesky follower counts (separate accounts per site)
+$secrets          = mkSecrets();
+$glycBskyHandle   = $secrets['bluesky_handle']               ?? '';
+$ibdBskyHandle    = $secrets['bluesky_ibdmovement_handle']   ?? '';
+$bskyGlyc         = mkBlueskyFollowers($glycBskyHandle);
+$bskyIbd          = mkBlueskyFollowers($ibdBskyHandle);
+$gscGlyc      = mkGscTotals('sc-domain:getglyc.com',    7);
 $gscIbd       = mkGscTotals('sc-domain:ibdmovement.com', 7);
 $ga4Glyc      = mkGa4Users(defined('MK_GA4_PROPERTY_GLYC') ? MK_GA4_PROPERTY_GLYC : '');
 $ga4Ibd       = mkGa4Users(defined('MK_GA4_PROPERTY_IBD')  ? MK_GA4_PROPERTY_IBD  : '');
@@ -461,13 +469,16 @@ $glycMetrics = [
     $mastoGlyc !== null
         ? mkMetric('Mast. followers', $mastoGlyc['followers'], null, 'raw', 'neutral')
         : mkMetricStub('Mast. followers'),
+    $bskyGlyc !== null
+        ? mkMetric('Bluesky followers', $bskyGlyc['followers'], null, 'raw', 'neutral')
+        : mkMetricStub('Bluesky followers'),
     $glycPublished !== null
         ? mkMetric('Posts published', $glycPublished, $glycPostsDelta, 'raw', 'neutral')
         : mkMetricStub('Posts published'),
 ];
 
 // Glyc status: online if we have at least one live source
-$glycSourcesOk = ($glycGscClicks !== null) || ($glycPublished !== null) || ($mastoGlyc !== null);
+$glycSourcesOk = ($glycGscClicks !== null) || ($glycPublished !== null) || ($mastoGlyc !== null) || ($bskyGlyc !== null);
 $glycStatus    = $glycSourcesOk ? 'online' : 'idle';
 
 // ── IBD child ─────────────────────────────────────────────────────────────────
@@ -491,12 +502,15 @@ $ibdMetrics = [
     $mastoIbd !== null
         ? mkMetric('Mast. followers', $mastoIbd['followers'], null, 'raw', 'neutral')
         : mkMetricStub('Mast. followers'),
+    $bskyIbd !== null
+        ? mkMetric('Bluesky followers', $bskyIbd['followers'], null, 'raw', 'neutral')
+        : mkMetricStub('Bluesky followers'),
     $ibdPublished !== null
         ? mkMetric('Posts published', $ibdPublished, $ibdPostsDelta, 'raw', 'neutral')
         : mkMetricStub('Posts published'),
 ];
 
-$ibdSourcesOk = ($ibdGscClicks !== null) || ($ibdPublished !== null) || ($mastoIbd !== null);
+$ibdSourcesOk = ($ibdGscClicks !== null) || ($ibdPublished !== null) || ($mastoIbd !== null) || ($bskyIbd !== null);
 $ibdStatus    = $ibdSourcesOk ? 'online' : 'idle';
 
 // ── Top-level status = worst-of-children ─────────────────────────────────────
@@ -510,13 +524,18 @@ if ($majorSourcesDown) {
     $topStatus = 'degraded';
 }
 
-// ── BlueSky shared footer metric ─────────────────────────────────────────────
+// ── Top-level Bluesky posts published metric (both Glyc + IBD, last 7d) ──────
 
-$bskyFollowers    = $bskyData !== null ? $bskyData['followers'] : null;
+$bskyGlycPublished = mkPostizPublished($postizCounts, POSTIZ_ID_GLYC_BLUESKY);
+$bskyIbdPublished  = mkPostizPublished($postizCounts, POSTIZ_ID_IBD_BLUESKY);
+$bskyTotalPublished = ($bskyGlycPublished !== null || $bskyIbdPublished !== null)
+    ? (int)($bskyGlycPublished ?? 0) + (int)($bskyIbdPublished ?? 0)
+    : null;
+
 $topLevelMetrics  = [
-    $bskyFollowers !== null
-        ? mkMetric('BlueSky followers', $bskyFollowers, null, 'raw', 'neutral')
-        : mkMetricStub('BlueSky followers'),
+    $bskyTotalPublished !== null
+        ? mkMetric('Bluesky posts (7d)', $bskyTotalPublished, null, 'raw', 'neutral')
+        : mkMetricStub('Bluesky posts (7d)'),
 ];
 
 // ── Build sparklines ─────────────────────────────────────────────────────────
@@ -567,8 +586,8 @@ $tile = [
         ],
     ],
     // v0 back-compat fields (renderer may still read these during migration)
-    'primary_metric' => $bskyFollowers !== null
-        ? $bskyFollowers . ' BlueSky followers'
+    'primary_metric' => $bskyTotalPublished !== null
+        ? $bskyTotalPublished . ' Bluesky posts (7d)'
         : (($glycPublished !== null || $ibdPublished !== null)
             ? (($glycPublished ?? 0) + ($ibdPublished ?? 0)) . ' posts published (7d)'
             : 'data loading'),
