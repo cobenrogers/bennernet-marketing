@@ -117,6 +117,8 @@ if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children
     }
 }
 
+$campaignData = $tileCache['campaign_data'] ?? null;
+
 // ── Data: Postiz queue status ─────────────────────────────────────────────────
 $postizQueueCount  = null;
 $postizError       = false;
@@ -170,6 +172,15 @@ if ($postizConfigured && $postizBaseUrl !== null && $postizAuthHeader !== null) 
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Calculate conversion rate as a formatted percentage string.
+ * Returns null when sessions = 0 to signal a "—" display.
+ */
+function mkConvRate(int $sessions, int $signups): ?string {
+    if ($sessions === 0) return null;
+    return number_format($signups / $sessions * 100, 1) . '%';
+}
 
 /**
  * Group a Postiz posts array by known integration platform keys.
@@ -979,6 +990,135 @@ renderHeader('Marketing', [
         Reports
       </span>
     </nav>
+  </section>
+
+  <!-- ── Campaign Performance ───────────────────────────────────────────── -->
+  <section aria-labelledby="campaign-heading">
+    <h2 class="mk-section-heading" id="campaign-heading">
+      <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#bar-chart-2"></use></svg>
+      Campaign Performance
+    </h2>
+    <div class="mk-card" style="margin-bottom: var(--space-8);">
+      <?php if ($campaignData === null): ?>
+        <div class="mk-card__body">
+          <p class="mk-empty">No campaign data available.</p>
+        </div>
+      <?php elseif ($campaignData === []): ?>
+        <div class="mk-card__body">
+          <p class="mk-empty">No campaign data yet — UTM links needed for attribution</p>
+        </div>
+      <?php else: ?>
+        <?php
+          $totalSessions = 0;
+          $totalSignups  = 0;
+          foreach ($campaignData as $row) {
+              $totalSessions += $row['sessions'];
+              $totalSignups  += $row['signups'];
+          }
+        ?>
+        <div class="mk-channel-health-scroll">
+          <table class="mk-channel-health-table">
+            <thead>
+              <tr>
+                <th scope="col">Source</th>
+                <th scope="col">Medium</th>
+                <th scope="col">Sessions (30d)</th>
+                <th scope="col">Sign-ups</th>
+                <th scope="col">Conv. Rate</th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php foreach ($campaignData as $row): ?>
+                <?php $convRate = mkConvRate($row['sessions'], $row['signups']); ?>
+                <tr>
+                  <td><?= h($row['source']) ?></td>
+                  <td><?= h($row['medium']) ?></td>
+                  <td><?= h((string)$row['sessions']) ?></td>
+                  <td><?= h((string)$row['signups']) ?></td>
+                  <td><?= $convRate !== null ? h($convRate) : '&mdash;' ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="2"><strong>Total</strong></td>
+                <td><strong><?= h((string)$totalSessions) ?></strong></td>
+                <td><strong><?= h((string)$totalSignups) ?></strong></td>
+                <td><strong><?php
+                  $totalConv = mkConvRate($totalSessions, $totalSignups);
+                  echo $totalConv !== null ? h($totalConv) : '&mdash;';
+                ?></strong></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div class="mk-card__body" style="padding-top: var(--space-2); padding-bottom: var(--space-2);">
+          <p class="mk-stub-notice">Source: GA4 UTM attribution, getglyc.com only (30d)</p>
+        </div>
+      <?php endif; ?>
+    </div>
+  </section>
+
+  <!-- ── Upcoming Calendar ────────────────────────────────────────────────── -->
+  <section aria-labelledby="calendar-heading">
+    <h2 class="mk-section-heading" id="calendar-heading">
+      <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#calendar"></use></svg>
+      Upcoming Calendar
+    </h2>
+    <div class="mk-card" style="margin-bottom: var(--space-8);">
+      <div class="mk-card__header">
+        <h3 class="mk-card__title">Next 14 Days</h3>
+        <?php if ($postizConfigured && $postizBaseUrl !== null): ?>
+          <a href="<?= h($postizBaseUrl) ?>" class="mk-card__link" target="_blank" rel="noopener">Open Postiz</a>
+        <?php endif; ?>
+      </div>
+      <div class="mk-card__body">
+        <?php if (!$postizConfigured): ?>
+          <p class="mk-empty">Postiz not configured.</p>
+        <?php elseif ($calendarError): ?>
+          <p class="mk-notice mk-notice--warn">Could not load calendar — check Postiz connection.</p>
+        <?php elseif (empty($calendarPosts)): ?>
+          <p class="mk-empty">Nothing scheduled in the next 14 days.
+            <?php if ($postizBaseUrl !== null): ?>
+              <a href="<?= h($postizBaseUrl) ?>" target="_blank" rel="noopener">Open Postiz</a>
+            <?php endif; ?>
+          </p>
+        <?php else: ?>
+          <?php
+            $prevDate = null;
+            foreach ($calendarPosts as $cp):
+              $cpDate = '';
+              $cpTs = isset($cp['publishDate']) ? strtotime($cp['publishDate']) : false;
+              if ($cpTs !== false) {
+                  $cpDate = date('Y-m-d', $cpTs);
+              }
+              $showDivider = ($cpDate !== $prevDate);
+              $prevDate = $cpDate;
+              $cpPlatform   = mkInferPlatform(
+                  ($cp['integration']['providerIdentifier'] ?? '')
+                  ?: ($cp['integration']['name'] ?? '')
+                  ?: ($cp['content'][0]['group']['name'] ?? '')
+              );
+              $cpBadgeClass = mkPlatformBadgeClass($cpPlatform);
+              $cpContent    = $cp['content'][0]['content'] ?? ($cp['content'] ?? '');
+              if (is_array($cpContent)) {
+                  $cpContent = '';
+              }
+              $cpPreview    = mkCalendarPreview((string)$cpContent);
+              $cpFormatted  = isset($cp['publishDate']) ? mkCalendarFormatDate($cp['publishDate']) : '';
+          ?>
+            <?php if ($showDivider && $cpDate !== ''): ?>
+              <div class="mk-calendar-date-divider"><?= h(date('D M j', strtotime($cpDate))) ?></div>
+            <?php endif; ?>
+            <div class="mk-calendar-item">
+              <span class="mk-calendar-item__time"><?= h($cpFormatted) ?></span>
+              <span class="mk-badge mk-badge--<?= h($cpBadgeClass) ?>"><?= h($cpPlatform) ?></span>
+              <span class="mk-calendar-item__preview"><?= h($cpPreview) ?></span>
+            </div>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </div>
+    </div>
   </section>
 
   <!-- ── Recent Activity ──────────────────────────────────────────────────── -->

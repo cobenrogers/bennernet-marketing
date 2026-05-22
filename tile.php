@@ -229,6 +229,57 @@ function mkGa4Users(string $propertyId): ?array {
     return ['users' => $totalUsers, 'sparkline' => $sparkline];
 }
 
+/**
+ * Fetch UTM campaign performance from GA4 for getglyc.com.
+ * Returns array of rows: [['source'=>string,'medium'=>string,'sessions'=>int,'signups'=>int], ...]
+ * or null on credential/API failure.
+ */
+function mkGa4CampaignData(): ?array {
+    $credPath   = defined('MK_GA4_CREDENTIALS_PATH') ? MK_GA4_CREDENTIALS_PATH : null;
+    $propertyId = defined('MK_GA4_PROPERTY_GLYC')    ? MK_GA4_PROPERTY_GLYC    : '';
+    if (!$credPath || !file_exists($credPath) || $propertyId === '') {
+        return null;
+    }
+
+    $token = mkGoogleSaToken($credPath, 'https://www.googleapis.com/auth/analytics.readonly');
+    if (!$token) {
+        return null;
+    }
+
+    $url  = "https://analyticsdata.googleapis.com/v1beta/properties/{$propertyId}:runReport";
+    $body = json_encode([
+        'dateRanges'       => [['startDate' => '29daysAgo', 'endDate' => 'today']],
+        'dimensions'       => [['name' => 'sessionSource'], ['name' => 'sessionMedium']],
+        'metrics'          => [['name' => 'sessions'], ['name' => 'keyEvents']],
+        'dimensionFilter'  => null,
+        'metricFilter'     => null,
+        'orderBys'         => [['metric' => ['metricName' => 'sessions'], 'desc' => true]],
+    ]);
+    $ctx  = stream_context_create(['http' => [
+        'method'        => 'POST',
+        'header'        => "Authorization: Bearer {$token}\r\nContent-Type: application/json\r\n",
+        'content'       => $body,
+        'timeout'       => 10,
+        'ignore_errors' => true,
+    ]]);
+    $resp = @file_get_contents($url, false, $ctx);
+    $data = $resp ? json_decode($resp, true) : null;
+    $rows = $data['rows'] ?? null;
+    if (!is_array($rows)) {
+        return null;
+    }
+
+    $result = [];
+    foreach ($rows as $row) {
+        $source   = $row['dimensionValues'][0]['value'] ?? '(unknown)';
+        $medium   = $row['dimensionValues'][1]['value'] ?? '(unknown)';
+        $sessions = (int)($row['metricValues'][0]['value'] ?? 0);
+        $signups  = (int)($row['metricValues'][1]['value'] ?? 0);
+        $result[] = compact('source', 'medium', 'sessions', 'signups');
+    }
+    return $result;
+}
+
 // ── Postiz — posts published in the last 7 days ───────────────────────────────
 
 /**
@@ -509,6 +560,7 @@ $gscGlyc      = mkGscTotals('sc-domain:getglyc.com',    7);
 $gscIbd       = mkGscTotals('sc-domain:ibdmovement.com', 7);
 $ga4Glyc      = mkGa4Users(defined('MK_GA4_PROPERTY_GLYC') ? MK_GA4_PROPERTY_GLYC : '');
 $ga4Ibd       = mkGa4Users(defined('MK_GA4_PROPERTY_IBD')  ? MK_GA4_PROPERTY_IBD  : '');
+$campaignData = mkGa4CampaignData();
 $mastoGlyc    = mkMastodonFollowers(
     defined('MK_MASTODON_INSTANCE_GLYC') ? MK_MASTODON_INSTANCE_GLYC : '',
     defined('MK_MASTODON_HANDLE_GLYC')   ? MK_MASTODON_HANDLE_GLYC   : ''
@@ -740,6 +792,7 @@ $tile = [
             ],
         ],
     ],
+    'campaign_data'  => $campaignData,
     // v0 back-compat fields (renderer may still read these during migration)
     'primary_metric' => $bskyTotalPublished !== null
         ? $bskyTotalPublished . ' Bluesky posts (7d)'
