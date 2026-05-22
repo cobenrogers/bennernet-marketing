@@ -10,6 +10,11 @@ define('PORT_ASSET_VERSION', '1.0.0');
 define('PORT_LOG_DIR', '/home2/mirdiwmy/logs/port');
 define('MK_GITHUB_TOKEN', 'YOUR_GITHUB_TOKEN_HERE');
 define('MK_CACHE_DIR', '/home2/mirdiwmy/cache/marketing');
+// Local workspace path — directory containing queue/ and published/ subdirs.
+// Set to the absolute path where glyc/docs/marketing/workspace lives on this host.
+// When defined, index.php reads draft counts and recent published files from the
+// local filesystem instead of the GitHub API (so unpushed files are visible).
+define('MK_WORKSPACE_PATH', '/home/YOUR_USER/glyc/docs/marketing/workspace');
 // GA4 — SA: bennernet-analytics-reader@bennernet-web-analytics.iam.gserviceaccount.com
 // Key: upload JSON to ~/keys/ga4-marketing.json (chmod 600) on Bluehost
 // Property IDs: GA4 Admin → Property Settings → Property ID (numeric)
