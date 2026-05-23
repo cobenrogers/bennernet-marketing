@@ -74,6 +74,8 @@ $glycMastoFollowers = null;
 $ibdMastoFollowers  = null;
 $glycGscClicks       = null;
 $ibdGscClicks        = null;
+$glycGscPriorClicks  = null;
+$ibdGscPriorClicks   = null;
 $glycGscImpressions  = null;
 $ibdGscImpressions   = null;
 $glycGscCtr          = null;
@@ -105,6 +107,9 @@ if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children
             } elseif (stripos($label, 'mast') !== false) {
                 if ($isGlyc) $glycMastoFollowers = $value;
                 if ($isIbd)  $ibdMastoFollowers  = $value;
+            } elseif (stripos($label, 'GSC clicks (prior') !== false) {
+                if ($isGlyc) $glycGscPriorClicks = $value;
+                if ($isIbd)  $ibdGscPriorClicks  = $value;
             } elseif (stripos($label, 'GSC clicks') !== false) {
                 if ($isGlyc) $glycGscClicks = $value;
                 if ($isIbd)  $ibdGscClicks  = $value;
@@ -390,6 +395,34 @@ function mkCheckEngagementOverdue(): array {
 }
 
 /**
+ * Check for a GA4 users week-over-week drop of more than 25%.
+ * Uses the 14-day sparkline already in the tile cache: elements 0–6 = prior week,
+ * elements 7–13 = current week.
+ *
+ * Issue: cobenrogers/mission-control-wiki#98
+ */
+function mkCheckGa4Drop(?array $sparkline14, string $site): array {
+    if ($sparkline14 === null || count($sparkline14) < 14) {
+        return ['ok' => true, 'message' => "GA4 users data unavailable for {$site}.", 'severity' => 'info'];
+    }
+    $priorUsers   = array_sum(array_slice($sparkline14, 0, 7));
+    $currentUsers = array_sum(array_slice($sparkline14, 7, 7));
+    if ($priorUsers === 0) {
+        return ['ok' => true, 'message' => "GA4 prior-week users zero for {$site}.", 'severity' => 'info'];
+    }
+    $drop = ($priorUsers - $currentUsers) / $priorUsers;
+    if ($drop > 0.25) {
+        $pct = round($drop * 100);
+        return [
+            'ok'       => false,
+            'message'  => "📉 GA4 users down {$pct}% week-over-week for {$site}",
+            'severity' => 'warn',
+        ];
+    }
+    return ['ok' => true, 'message' => "GA4 users stable for {$site}.", 'severity' => 'info'];
+}
+
+/**
  * Strip HTML tags and collapse whitespace for calendar post preview.
  */
 function mkCalendarStripHtml(string $html): string {
@@ -444,8 +477,10 @@ function mkRelativeTimeTs(int $ts): string
 // ── Anomaly checks ────────────────────────────────────────────────────────────
 $anomalyChecks = [
     mkCheckPostizErrors($postizByPlatform),
-    mkCheckGscDrop($glycGscClicks, null, 'getglyc.com'),  // prior week data not cached yet
-    mkCheckGscDrop($ibdGscClicks,  null, 'ibdmovement.com'),
+    mkCheckGscDrop($glycGscClicks, $glycGscPriorClicks, 'getglyc.com'),
+    mkCheckGscDrop($ibdGscClicks,  $ibdGscPriorClicks,  'ibdmovement.com'),
+    mkCheckGa4Drop($glycSparkline, 'getglyc.com'),
+    mkCheckGa4Drop($ibdSparkline,  'ibdmovement.com'),
     mkCheckEngagementOverdue(),
 ];
 $activeFlags = array_filter($anomalyChecks, fn($c) => !$c['ok']);

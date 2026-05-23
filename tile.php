@@ -496,7 +496,7 @@ function mkGscParseRow(?array $data): ?array {
  *
  * @return array{'clicks': int, 'impressions': int, 'ctr': float|null, 'position': float|null}|null
  */
-function mkGscTotals(string $siteUrl, int $days = 7): ?array {
+function mkGscTotals(string $siteUrl, int $days = 7, int $endOffset = 1): ?array {
     $credPath = defined('MK_GA4_CREDENTIALS_PATH') ? MK_GA4_CREDENTIALS_PATH : null;
     if (!$credPath || !file_exists($credPath)) {
         return null;
@@ -507,8 +507,8 @@ function mkGscTotals(string $siteUrl, int $days = 7): ?array {
         return null;
     }
 
-    $endDate   = date('Y-m-d', strtotime('-1 day'));
-    $startDate = date('Y-m-d', strtotime("-{$days} days"));
+    $endDate   = date('Y-m-d', strtotime("-{$endOffset} days"));
+    $startDate = date('Y-m-d', strtotime('-' . ($endOffset + $days - 1) . ' days'));
     $url       = 'https://searchconsole.googleapis.com/webmasters/v3/sites/'
                . urlencode($siteUrl) . '/searchAnalytics/query';
     $body      = json_encode([
@@ -563,6 +563,8 @@ $bskyGlyc         = mkBlueskyFollowers($glycBskyHandle);
 $bskyIbd          = mkBlueskyFollowers($ibdBskyHandle);
 $gscGlyc      = mkGscTotals('sc-domain:getglyc.com',    7);
 $gscIbd       = mkGscTotals('sc-domain:ibdmovement.com', 7);
+$gscGlycPrior = mkGscTotals('sc-domain:getglyc.com',    7, 8);
+$gscIbdPrior  = mkGscTotals('sc-domain:ibdmovement.com', 7, 8);
 $ga4Glyc      = mkGa4Users(defined('MK_GA4_PROPERTY_GLYC') ? MK_GA4_PROPERTY_GLYC : '');
 $ga4Ibd       = mkGa4Users(defined('MK_GA4_PROPERTY_IBD')  ? MK_GA4_PROPERTY_IBD  : '');
 $campaignData = mkGa4CampaignData();
@@ -618,6 +620,7 @@ $glycGscClicks       = $gscGlyc !== null ? $gscGlyc['clicks']      : null;
 $glycGscImpressions  = $gscGlyc !== null ? $gscGlyc['impressions'] : null;
 $glycGscCtr          = $gscGlyc !== null ? $gscGlyc['ctr']         : null;
 $glycGscPosition     = $gscGlyc !== null ? $gscGlyc['position']    : null;
+$glycGscPriorClicks  = $gscGlycPrior !== null ? $gscGlycPrior['clicks'] : null;
 $glycXPublished = mkPostizPublished($postizCounts, POSTIZ_ID_GLYC_X);
 $glycXQueued    = mkPostizQueued($postizCounts, POSTIZ_ID_GLYC_X);
 
@@ -647,6 +650,9 @@ $glycMetrics = [
     $glycGscPosition !== null
         ? mkMetric('GSC avg position', $glycGscPosition, null, 'raw', 'negative')
         : mkMetricStub('GSC avg position'),
+    $glycGscPriorClicks !== null
+        ? mkMetric('GSC clicks (prior 7d)', $glycGscPriorClicks, null, 'raw', 'neutral')
+        : mkMetricStub('GSC clicks (prior 7d)'),
     $mastoGlyc !== null
         ? mkMetric('Mast. followers', $mastoGlyc['followers'], null, 'raw', 'neutral')
         : mkMetricStub('Mast. followers'),
@@ -676,6 +682,7 @@ $ibdGscClicks         = $gscIbd !== null ? $gscIbd['clicks']      : null;
 $ibdGscImpressions    = $gscIbd !== null ? $gscIbd['impressions'] : null;
 $ibdGscCtr            = $gscIbd !== null ? $gscIbd['ctr']         : null;
 $ibdGscPosition       = $gscIbd !== null ? $gscIbd['position']    : null;
+$ibdGscPriorClicks    = $gscIbdPrior !== null ? $gscIbdPrior['clicks'] : null;
 $ibdXPublished = mkPostizPublished($postizCounts, POSTIZ_ID_IBD_X);
 $ibdXQueued    = mkPostizQueued($postizCounts, POSTIZ_ID_IBD_X);
 
@@ -705,6 +712,9 @@ $ibdMetrics = [
     $ibdGscPosition !== null
         ? mkMetric('GSC avg position', $ibdGscPosition, null, 'raw', 'negative')
         : mkMetricStub('GSC avg position'),
+    $ibdGscPriorClicks !== null
+        ? mkMetric('GSC clicks (prior 7d)', $ibdGscPriorClicks, null, 'raw', 'neutral')
+        : mkMetricStub('GSC clicks (prior 7d)'),
     $mastoIbd !== null
         ? mkMetric('Mast. followers', $mastoIbd['followers'], null, 'raw', 'neutral')
         : mkMetricStub('Mast. followers'),

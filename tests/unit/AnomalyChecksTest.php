@@ -46,4 +46,28 @@ class AnomalyChecksTest extends TestCase {
         $this->assertArrayHasKey('ok', $result);
         $this->assertTrue($result['ok']); // no workspace path in test env
     }
+    public function testGa4DropCheckFlagsOn25PercentDrop(): void {
+        // prior 7d = 1000, current 7d = 500 → 50% drop
+        $sparkline = array_merge(array_fill(0, 7, 1000 / 7), array_fill(0, 7, 500 / 7));
+        // Use integer counts for realistic data
+        $sparkline = [143, 143, 143, 143, 143, 143, 142, 71, 71, 71, 71, 71, 71, 73];
+        $result = mkCheckGa4Drop($sparkline, 'getglyc.com');
+        $this->assertFalse($result['ok']);
+        $this->assertStringContainsString('GA4 users down', $result['message']);
+        $this->assertSame('warn', $result['severity']);
+    }
+    public function testGa4DropCheckClearWhenTrafficStable(): void {
+        $sparkline = array_fill(0, 14, 100);
+        $result = mkCheckGa4Drop($sparkline, 'getglyc.com');
+        $this->assertTrue($result['ok']);
+    }
+    public function testGa4DropCheckGracefulOnNull(): void {
+        $result = mkCheckGa4Drop(null, 'getglyc.com');
+        $this->assertTrue($result['ok']);
+        $this->assertSame('info', $result['severity']);
+    }
+    public function testGa4DropCheckGracefulOnShortSparkline(): void {
+        $result = mkCheckGa4Drop([100, 90, 80], 'getglyc.com');
+        $this->assertTrue($result['ok']);
+    }
 }
