@@ -21,3 +21,7 @@ date,property,metric,value,unit_window,source
 2026-05-27,ibd,social_bsky_followers,39,snapshot,manual (GSC UI / native, 2026-05-27)
 2026-05-27,ibd,social_masto_followers,3,snapshot,manual (GSC UI / native, 2026-05-27)
 2026-05-27,ibd,social_x_followers,2,snapshot,manual (GSC UI / native, 2026-05-27)
+2026-05-27,glyc,ga4_returning_users,105,28d,ga4_api
+2026-05-27,glyc,utm_social_sessions,32,28d,ga4_api
+2026-05-27,ibd,ga4_returning_users,31,28d,ga4_api
+2026-05-27,ibd,utm_social_sessions,40,28d,ga4_api
