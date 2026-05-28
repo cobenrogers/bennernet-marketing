@@ -43,3 +43,15 @@ date,property,metric,value,unit_window,source
 2026-05-28,ibd,gsc_clicks,0,7d,gsc_api
 2026-05-28,ibd,gsc_impressions,25,7d,gsc_api
 2026-05-28,ibd,gsc_avg_position,83.7,7d,gsc_api
+2026-05-28,glyc,social_bsky_followers,47,snapshot,bluesky_api
+2026-05-28,glyc,social_bsky_likes_last10,16,last10,bluesky_api
+2026-05-28,glyc,social_bsky_reposts_last10,1,last10,bluesky_api
+2026-05-28,glyc,social_masto_followers,1,snapshot,mastodon_api
+2026-05-28,glyc,social_masto_favs_last10,0,last10,mastodon_api
+2026-05-28,glyc,social_masto_boosts_last10,0,last10,mastodon_api
+2026-05-28,ibd,social_bsky_followers,40,snapshot,bluesky_api
+2026-05-28,ibd,social_bsky_likes_last10,10,last10,bluesky_api
+2026-05-28,ibd,social_bsky_reposts_last10,1,last10,bluesky_api
+2026-05-28,ibd,social_masto_followers,3,snapshot,mastodon_api
+2026-05-28,ibd,social_masto_favs_last10,1,last10,mastodon_api
+2026-05-28,ibd,social_masto_boosts_last10,2,last10,mastodon_api
