@@ -1,0 +1,25 @@
+version: 2
+# Ecosystems + grouping per the Dependabot auto-merge policy:
+# https://github.com/cobenrogers/mission-control-wiki/blob/main/wiki/ops/dependabot-auto-merge-policy.md
+# Grouped so dev-deps, prod minor/patch, and actions arrive as batched PRs;
+# production MAJORS arrive individually (excluded from the minor/patch group) for Propose review.
+updates:
+  - package-ecosystem: "composer"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      composer-dev:
+        dependency-type: "development"
+      composer-prod-minor-patch:
+        dependency-type: "production"
+        update-types: ["minor", "patch"]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns: ["*"]
