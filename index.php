@@ -1254,6 +1254,11 @@ renderHeader('Marketing', [
         <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#search"></use></svg>
         Research
       </a>
+      <a href="<?= 'https://github.com/cobenrogers/mission-control-wiki/blob/main/wiki/logs/' . date('Y-m') . '.md' ?>"
+         class="mk-quicklinks__link" target="_blank" rel="noopener">
+        <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#notebook-pen"></use></svg>
+        Pop-Mark Log
+      </a>
       <span class="mk-quicklinks__link mk-quicklinks__link--stub" title="Coming soon">
         <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#file-bar-chart"></use></svg>
         Reports
