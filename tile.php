@@ -57,6 +57,131 @@ if (file_exists($cacheFile)) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// ── History store helpers ─────────────────────────────────────────────────────
+
+/**
+ * Read data/metrics_history.csv and return indexed by [date][property][metric].
+ * Returns empty array if file not found or unreadable.
+ */
+function mkHistoryStore(): array {
+    $csv = __DIR__ . '/data/metrics_history.csv';
+    if (!file_exists($csv)) {
+        return [];
+    }
+    $fh = @fopen($csv, 'r');
+    if (!$fh) {
+        return [];
+    }
+    $header = fgetcsv($fh);
+    if (!$header) {
+        fclose($fh);
+        return [];
+    }
+    $store = [];
+    while (($row = fgetcsv($fh)) !== false) {
+        if (count($row) !== count($header)) {
+            continue;
+        }
+        $r = array_combine($header, $row);
+        $store[$r['date']][$r['property']][$r['metric']] = (float)$r['value'];
+    }
+    fclose($fh);
+    return $store;
+}
+
+/** Get the most recent recorded value for (property, metric). */
+function mkHistoryLatest(array $store, string $property, string $metric): ?float {
+    $dates = array_keys($store);
+    rsort($dates);
+    foreach ($dates as $date) {
+        if (isset($store[$date][$property][$metric])) {
+            return $store[$date][$property][$metric];
+        }
+    }
+    return null;
+}
+
+/**
+ * Get the value closest to N days before the latest date for a given metric.
+ * Returns null if no data point exists at or before the cutoff.
+ */
+function mkHistoryPrior(array $store, string $property, string $metric, int $daysBack = 28): ?float {
+    $dates = array_keys($store);
+    rsort($dates);
+    if (empty($dates)) {
+        return null;
+    }
+    $cutoff = date('Y-m-d', strtotime($dates[0] . " -{$daysBack} days"));
+    foreach ($dates as $date) {
+        if ($date <= $cutoff && isset($store[$date][$property][$metric])) {
+            return $store[$date][$property][$metric];
+        }
+    }
+    return null;
+}
+
+// Scoreboard targets (from marketing-analytics-scoreboard.md spec, 2026-05-27)
+const MK_TARGETS = [
+    'glyc' => [
+        'ga4_debotted_sessions' => 1000.0,  // /28d — Mediavine engagement bar
+        'indexed_pages'         => 130.0,   // ≥130 sustained 14d
+    ],
+    'ibd'  => [
+        // Targets are "grow" / "upward slope" — no hard number yet; null = directional only
+    ],
+];
+
+/**
+ * Build a scoreboard entry for a single (property, metric).
+ * Returns current, prior, delta, target, progress (% of target), direction.
+ */
+function mkScoreboardEntry(array $store, string $property, string $metric): array {
+    $target  = MK_TARGETS[$property][$metric] ?? null;
+    $current = mkHistoryLatest($store, $property, $metric);
+    $prior   = mkHistoryPrior($store, $property, $metric, 28);
+    $delta   = ($current !== null && $prior !== null) ? round($current - $prior, 2) : null;
+    $progress = ($current !== null && $target !== null) ? round(($current / $target) * 100, 1) : null;
+
+    $direction = 'neutral';
+    if ($delta !== null) {
+        $direction = $delta > 0 ? 'positive' : ($delta < 0 ? 'negative' : 'neutral');
+    }
+
+    return compact('metric', 'current', 'prior', 'delta', 'target', 'progress', 'direction');
+}
+
+/**
+ * Build the full scoreboard section for both properties.
+ * This is the history-store-backed trend + actual-vs-target view.
+ */
+function mkScoreboard(array $store): array {
+    $tracked = [
+        'glyc' => [
+            'ga4_debotted_sessions', 'ga4_engaged_sessions', 'ga4_sign_ups',
+            'ga4_returning_users', 'utm_social_sessions',
+            'gsc_clicks', 'gsc_impressions', 'gsc_avg_position', 'indexed_pages',
+            'social_bsky_followers', 'social_bsky_likes_last10', 'social_bsky_reposts_last10',
+            'social_masto_followers', 'social_masto_favs_last10', 'social_masto_boosts_last10',
+        ],
+        'ibd'  => [
+            'ga4_debotted_sessions', 'ga4_engaged_sessions', 'ga4_sign_ups',
+            'ga4_returning_users', 'utm_social_sessions',
+            'gsc_clicks', 'gsc_impressions', 'gsc_avg_position', 'indexed_pages',
+            'social_bsky_followers', 'social_bsky_likes_last10', 'social_bsky_reposts_last10',
+            'social_masto_followers', 'social_masto_favs_last10', 'social_masto_boosts_last10',
+        ],
+    ];
+
+    $board = [];
+    foreach ($tracked as $prop => $metrics) {
+        $board[$prop] = [];
+        foreach ($metrics as $metric) {
+            $board[$prop][$metric] = mkScoreboardEntry($store, $prop, $metric);
+        }
+    }
+    return $board;
+}
+
 /** Stub metric — renderer shows "—" for null values. */
 function mkMetricStub(string $label): array {
     return [
@@ -534,6 +659,16 @@ function mkGscTotals(string $siteUrl, int $days = 7, int $endOffset = 1): ?array
 
 $fetchStart = time();
 
+// ── History store (read once; used for scoreboard + deltas) ──────────────────
+$history    = mkHistoryStore();
+$scoreboard = mkScoreboard($history);
+
+// Bluesky follower deltas from history (7-day lookback)
+$glycBskyPrior7d = mkHistoryPrior($history, 'glyc', 'social_bsky_followers', 7);
+$ibdBskyPrior7d  = mkHistoryPrior($history, 'ibd',  'social_bsky_followers', 7);
+$glycMastoPrior7d = mkHistoryPrior($history, 'glyc', 'social_masto_followers', 7);
+$ibdMastoPrior7d  = mkHistoryPrior($history, 'ibd',  'social_masto_followers', 7);
+
 // Postiz integration IDs (from running Postiz instance)
 // - cmouj99190001pi8h1f0upfga  = Glyc (Bluesky / bennernet.bsky.social)
 // - cmpbj9osm0008poec8q68tlgo  = IBD Movement (Bluesky / ibdmovement.bsky.social)
@@ -634,10 +769,26 @@ if ($glycXQueued > 0) {
     $glycXPostsDelta = '+' . $glycXQueued . ' scheduled';
 }
 
+// Engaged sessions from history store (28d, de-botted) with target progress
+$glycEngaged28d = mkHistoryLatest($history, 'glyc', 'ga4_debotted_sessions');
+$glycEngagedTarget = MK_TARGETS['glyc']['ga4_debotted_sessions'];
+$glycEngagedDelta  = $scoreboard['glyc']['ga4_debotted_sessions']['delta'] ?? null;
+$glycEngagedProgress = $glycEngaged28d !== null
+    ? sprintf('%.0f / %.0f target (%.1f%%)', $glycEngaged28d, $glycEngagedTarget,
+        ($glycEngaged28d / $glycEngagedTarget) * 100)
+    : null;
+
+$ibdEngaged28d = mkHistoryLatest($history, 'ibd', 'ga4_debotted_sessions');
+$ibdEngagedDelta = $scoreboard['ibd']['ga4_debotted_sessions']['delta'] ?? null;
+
 $glycMetrics = [
     $ga4Glyc !== null
         ? mkMetric('Users', $ga4Glyc['users'], null, 'raw', 'neutral')
         : mkMetricStub('Users'),
+    $glycEngaged28d !== null
+        ? mkMetric('Engaged sessions (28d)', (int)$glycEngaged28d, $glycEngagedProgress, 'raw',
+            $glycEngagedDelta > 0 ? 'positive' : ($glycEngagedDelta < 0 ? 'negative' : 'neutral'))
+        : mkMetricStub('Engaged sessions (28d)'),
     $glycGscClicks !== null
         ? mkMetric('GSC clicks', $glycGscClicks, null, 'raw', 'positive')
         : mkMetricStub('GSC clicks'),
@@ -654,10 +805,14 @@ $glycMetrics = [
         ? mkMetric('GSC clicks (prior 7d)', $glycGscPriorClicks, null, 'raw', 'neutral')
         : mkMetricStub('GSC clicks (prior 7d)'),
     $mastoGlyc !== null
-        ? mkMetric('Mast. followers', $mastoGlyc['followers'], null, 'raw', 'neutral')
+        ? mkMetric('Mast. followers', $mastoGlyc['followers'],
+            ($glycMastoPrior7d !== null ? sprintf('%+d vs 7d ago', $mastoGlyc['followers'] - (int)$glycMastoPrior7d) : null),
+            'raw', $mastoGlyc['followers'] >= ($glycMastoPrior7d ?? $mastoGlyc['followers']) ? 'positive' : 'negative')
         : mkMetricStub('Mast. followers'),
     $bskyGlyc !== null
-        ? mkMetric('Bluesky followers', $bskyGlyc['followers'], null, 'raw', 'neutral')
+        ? mkMetric('Bluesky followers', $bskyGlyc['followers'],
+            ($glycBskyPrior7d !== null ? sprintf('%+d vs 7d ago', $bskyGlyc['followers'] - (int)$glycBskyPrior7d) : null),
+            'raw', $bskyGlyc['followers'] >= ($glycBskyPrior7d ?? $bskyGlyc['followers']) ? 'positive' : 'negative')
         : mkMetricStub('Bluesky followers'),
     $xGlyc !== null
         ? mkMetric('X followers', $xGlyc['followers'], null, 'raw', 'neutral')
@@ -700,6 +855,11 @@ $ibdMetrics = [
     $ga4Ibd !== null
         ? mkMetric('Users', $ga4Ibd['users'], null, 'raw', 'neutral')
         : mkMetricStub('Users'),
+    $ibdEngaged28d !== null
+        ? mkMetric('Engaged sessions (28d)', (int)$ibdEngaged28d,
+            ($ibdEngagedDelta !== null ? sprintf('%+.0f vs prior 28d', $ibdEngagedDelta) : null),
+            'raw', $ibdEngagedDelta > 0 ? 'positive' : ($ibdEngagedDelta < 0 ? 'negative' : 'neutral'))
+        : mkMetricStub('Engaged sessions (28d)'),
     $ibdGscClicks !== null
         ? mkMetric('GSC clicks', $ibdGscClicks, null, 'raw', 'positive')
         : mkMetricStub('GSC clicks'),
@@ -716,10 +876,14 @@ $ibdMetrics = [
         ? mkMetric('GSC clicks (prior 7d)', $ibdGscPriorClicks, null, 'raw', 'neutral')
         : mkMetricStub('GSC clicks (prior 7d)'),
     $mastoIbd !== null
-        ? mkMetric('Mast. followers', $mastoIbd['followers'], null, 'raw', 'neutral')
+        ? mkMetric('Mast. followers', $mastoIbd['followers'],
+            ($ibdMastoPrior7d !== null ? sprintf('%+d vs 7d ago', $mastoIbd['followers'] - (int)$ibdMastoPrior7d) : null),
+            'raw', $mastoIbd['followers'] >= ($ibdMastoPrior7d ?? $mastoIbd['followers']) ? 'positive' : 'negative')
         : mkMetricStub('Mast. followers'),
     $bskyIbd !== null
-        ? mkMetric('Bluesky followers', $bskyIbd['followers'], null, 'raw', 'neutral')
+        ? mkMetric('Bluesky followers', $bskyIbd['followers'],
+            ($ibdBskyPrior7d !== null ? sprintf('%+d vs 7d ago', $bskyIbd['followers'] - (int)$ibdBskyPrior7d) : null),
+            'raw', $bskyIbd['followers'] >= ($ibdBskyPrior7d ?? $bskyIbd['followers']) ? 'positive' : 'negative')
         : mkMetricStub('Bluesky followers'),
     $xIbd !== null
         ? mkMetric('X followers', $xIbd['followers'], null, 'raw', 'neutral')
@@ -807,6 +971,7 @@ $tile = [
             ],
         ],
     ],
+    'scoreboard'     => $scoreboard,
     'campaign_data'  => $campaignData,
     // v0 back-compat fields (renderer may still read these during migration)
     'primary_metric' => $bskyTotalPublished !== null
