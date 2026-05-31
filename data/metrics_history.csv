@@ -133,3 +133,15 @@ date,property,metric,value,unit_window,source
 2026-05-31,ibd,gsc_clicks,0,7d,gsc_api
 2026-05-31,ibd,gsc_impressions,21,7d,gsc_api
 2026-05-31,ibd,gsc_avg_position,80.3,7d,gsc_api
+2026-05-31,glyc,social_bsky_followers,47,snapshot,bluesky_api
+2026-05-31,glyc,social_bsky_likes_last10,15,last10,bluesky_api
+2026-05-31,glyc,social_bsky_reposts_last10,2,last10,bluesky_api
+2026-05-31,glyc,social_masto_followers,2,snapshot,mastodon_api
+2026-05-31,glyc,social_masto_favs_last10,0,last10,mastodon_api
+2026-05-31,glyc,social_masto_boosts_last10,0,last10,mastodon_api
+2026-05-31,ibd,social_bsky_followers,48,snapshot,bluesky_api
+2026-05-31,ibd,social_bsky_likes_last10,12,last10,bluesky_api
+2026-05-31,ibd,social_bsky_reposts_last10,1,last10,bluesky_api
+2026-05-31,ibd,social_masto_followers,4,snapshot,mastodon_api
+2026-05-31,ibd,social_masto_favs_last10,1,last10,mastodon_api
+2026-05-31,ibd,social_masto_boosts_last10,2,last10,mastodon_api
