@@ -56,31 +56,45 @@ The postgres service only binds within the `postiz_postiz-network` bridge
 (container IP `172.18.0.3`). PHP running on the host cannot reach it with
 a standard PDO DSN.
 
-### Solution: docker exec via proc_open
+### Solution: mission-control-bridge `/postiz-db` endpoint
 
-All DB writes use:
+All DB writes go through `POST /postiz-db` on the mission-control-bridge
+(`~/.local/share/mission-control-bridge/bridge.py`). The bridge runs on
+Pop OS where docker is available, and executes:
 
 ```
 docker exec -i postiz-postgres psql -U postiz-user postiz-db-local -t -A
 ```
 
-SQL is passed via stdin (pipe), which avoids shell-quoting issues and
-prevents command injection. Single-quotes in SQL values are escaped by
-doubling (`''`), which is standard PostgreSQL.
+SQL is built server-side from a whitelisted set of actions — callers never
+send raw SQL. `subprocess.run` is called with a list (not `shell=True`),
+eliminating shell injection risk. Single-quotes are escaped by doubling
+(`''`), which is standard PostgreSQL escaping.
 
-### Production limitation (Bluehost)
+`social-posts-api.php` calls the bridge endpoint for all DB ops, the same
+way it already calls the Postiz public API. Works identically from both
+Bluehost production and local.
 
-On Bluehost shared hosting, `docker` is not available. This means:
+### Network path: how Bluehost reaches the bridge
 
-- `edit_content`, `reschedule`, `delete` will fail with a DB error
-- `publish_now` will also fail (it needs the integration ID from DB)
+The bridge binds to `127.0.0.1:18800`. It is exposed publicly via
+**Tailscale Funnel** — Tailscale forwards inbound HTTPS traffic to
+`localhost:18800`. `MK_BRIDGE_URL` in `config.php` is the Tailscale Funnel
+URL (e.g. `https://pop-os.tail3d9bfc.ts.net`). Bluehost calls that URL;
+Tailscale terminates TLS and delivers the request to the bridge process.
 
-These operations are only functional when running on the Pop OS dev server
-(local or Tailscale-proxied). On production, the social-posts.php list view
-(read-only) will work fine via the Postiz public API.
+**Deployment dependency:** Tailscale must be running on Pop OS and Funnel
+must be active for Bluehost production to reach the bridge. If the bridge
+is down, all write ops return a 503 with `"Bridge unreachable"`.
 
-**Future fix:** Expose the postgres port in the Postiz Docker Compose
-(`5432:5432`) or add a thin REST endpoint to the Postiz app itself.
+### Known caveat: `_fetch_field` truncates multiline content
+
+The bridge's `_fetch_field` helper takes only the first line of psql output.
+For the `content` field this would silently truncate posts with newlines in
+the content. **This does not affect `publish_now` in practice** because
+`publish_now` always uses `contentOverride` from the browser textarea — it
+never falls back to the DB content field. Leaving as-is; document here so
+it's visible if `content` is ever used as a DB-read fallback in the future.
 
 ---
 
@@ -120,14 +134,17 @@ HTML structure
 
 ```
 requireModuleAccess('marketing', 'editor')  ← editor role required
+validateCsrfToken(X-CSRF-Token header)      ← CSRF protection
 Parse JSON body
 Route on action:
-  edit_content  → mkPostizExecSql(UPDATE "Post" SET content …)
-  reschedule    → mkPostizExecSql(UPDATE "Post" SET publishDate, state=QUEUE …)
-  delete        → mkPostizExecSql(UPDATE "Post" SET deletedAt=NOW() …)
-  publish_now   → mkPostizFetchPost() [DB]
-                → mkPostizExecSql(soft-delete old draft)
-                → mkPostizApiPost(POST /api/public/v1/posts, type=now)
+  edit_content  → mkBridgeDbCall(bridge, edit_content)
+  reschedule    → validate future date
+                → mkBridgeDbCall(bridge, reschedule, isoDate)
+  delete        → mkBridgeDbCall(bridge, delete)
+  publish_now   → mkBridgeDbCall(bridge, fetch_fields) [state, integrationId, image, content]
+                → mkBridgeDbCall(bridge, soft_delete)
+                → mkPostizApiPost(POST /api/public/v1/posts, type=now, with image)
+                → on API failure: mkBridgeDbCall(bridge, restore) [rollback]
 ```
 
 ---
@@ -146,34 +163,35 @@ Route on action:
 
 ## Known Limitations
 
-1. **Write ops unavailable on Bluehost** — `docker exec` not available on
-   shared hosting. The page is read-only in production. See DB write section.
-2. **No image upload** — the inline panel shows the image from the API response
-   (`image`/`media` field). Uploading a new image is not implemented.
-3. **No pagination** — fetches up to 500 posts in the 60-day window. If the
-   volume grows beyond that, add `&page=` pagination or shrink the date window.
+1. **Bridge dependency for write ops** — write ops require the
+   mission-control-bridge to be reachable via Tailscale Funnel. If the bridge
+   is down, all write actions return 503. Read-only list view always works.
+2. **No image upload** — the inline panel shows the image from the API response.
+   Uploading a new image is not implemented.
+3. **No pagination** — fetches up to 500 posts in the 60-day window. If volume
+   grows beyond that, add `&page=` pagination or shrink the date window.
 4. **publish_now creates a new post** — the old draft is soft-deleted and a
    fresh post is POSTed via the Postiz API. The post ID will change.
-5. **Thread posts** — multi-message threads in Postiz are returned as a single
-   post object; the textarea shows only the first message. Thread editing is
-   not supported.
+5. **Thread posts** — multi-message threads are returned as a single post
+   object; the textarea shows only the first message. Thread editing is not
+   supported.
+6. **_fetch_field content truncation** — the bridge's `_fetch_field` takes only
+   the first line of psql output; multiline post content would be truncated.
+   This is benign because `publish_now` always uses the textarea value, never
+   falls back to the DB content read. See DB Write Approach section.
 
 ---
 
-## Config.php — New Constants Required
+## Config.php — Required Constants
 
-Add these to `config.php` on the server if not already present:
+`social-posts.php` (read) and `social-posts-api.php` (write) both require
+`MK_BRIDGE_URL` and `MK_BRIDGE_TOKEN` to be set in `config.php`:
 
 ```php
-define('MK_POSTIZ_URL',   'http://localhost:5000');  // or Tailscale URL
-define('MK_POSTIZ_TOKEN', 'YOUR_POSTIZ_PUBLIC_API_TOKEN');
+define('MK_BRIDGE_URL',   'https://pop-os.tail3d9bfc.ts.net');  // Tailscale Funnel URL
+define('MK_BRIDGE_TOKEN', 'YOUR_BRIDGE_TOKEN');                   // from sops secrets
 ```
 
-**No new constants are needed beyond the existing `MK_POSTIZ_URL` and
-`MK_POSTIZ_TOKEN`.** The `MK_POSTIZ_DB_PASSWORD` constant is NOT used —
-DB access goes through `docker exec psql` (no password needed for
-`postiz-user` within the container's trusted local connection).
-
-If `MK_POSTIZ_URL` / `MK_POSTIZ_TOKEN` are not yet in your production
-`config.php`, add them. The social-posts.php page will show a warning
-notice until they are set.
+`MK_POSTIZ_URL` / `MK_POSTIZ_TOKEN` are used as a fallback for direct local
+access (dev without bridge). On production, the bridge constants take
+precedence and the Postiz API is called through the bridge proxy.
