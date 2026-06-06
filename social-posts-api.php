@@ -64,18 +64,26 @@ if (!$postId || !preg_match('/^[a-zA-Z0-9_-]+$/', $postId)) {
     exit;
 }
 
-// ── Postiz configuration ──────────────────────────────────────────────────────
+// ── Postiz + bridge configuration ────────────────────────────────────────────
+// $postizBaseUrl   — Postiz public API base (for POST /api/public/v1/posts)
+// $bridgeBaseUrl   — bridge base URL (for /postiz-db DB writes; always the bridge)
 $postizBaseUrl    = null;
 $postizAuthHeader = null;
+$bridgeBaseUrl    = null;
+$bridgeAuthHeader = null;
 
-if (defined('MK_POSTIZ_URL') && MK_POSTIZ_URL !== '' &&
-    defined('MK_POSTIZ_TOKEN') && MK_POSTIZ_TOKEN !== '') {
+if (defined('MK_BRIDGE_URL') && MK_BRIDGE_URL !== '' &&
+    defined('MK_BRIDGE_TOKEN') && MK_BRIDGE_TOKEN !== '') {
+    $bridgeBaseUrl    = rtrim(MK_BRIDGE_URL, '/');
+    $bridgeAuthHeader = 'Bearer ' . MK_BRIDGE_TOKEN;
+    // Postiz public API goes through the bridge proxy
+    $postizBaseUrl    = $bridgeBaseUrl . '/postiz';
+    $postizAuthHeader = $bridgeAuthHeader;
+} elseif (defined('MK_POSTIZ_URL') && MK_POSTIZ_URL !== '' &&
+          defined('MK_POSTIZ_TOKEN') && MK_POSTIZ_TOKEN !== '') {
+    // Direct local access (dev without bridge)
     $postizBaseUrl    = rtrim(MK_POSTIZ_URL, '/');
     $postizAuthHeader = 'Bearer ' . MK_POSTIZ_TOKEN;
-} elseif (defined('MK_BRIDGE_URL') && MK_BRIDGE_URL !== '' &&
-          defined('MK_BRIDGE_TOKEN') && MK_BRIDGE_TOKEN !== '') {
-    $postizBaseUrl    = rtrim(MK_BRIDGE_URL, '/') . '/postiz';
-    $postizAuthHeader = 'Bearer ' . MK_BRIDGE_TOKEN;
 }
 
 if (!$postizBaseUrl) {
@@ -84,64 +92,39 @@ if (!$postizBaseUrl) {
     exit;
 }
 
-// ── DB helpers via docker exec ────────────────────────────────────────────────
-// The postgres container (postiz-postgres) does NOT expose port 5432 on the host.
-// All DB writes go through: docker exec postiz-postgres psql ... -c "SQL"
-// NOTE: On Bluehost (production), docker is not available — DB writes will fail
-// gracefully. In that case, only publish_now (API-based) will work on production.
-// See docs/social-posts-spec.md for details.
-
-/**
- * Execute a SQL command in the postiz-postgres container via docker exec.
- * Returns [ok => bool, output => string, error => string].
- */
-function mkPostizExecSql(string $sql): array {
-    // Escape double-quotes in SQL for shell safety — use single-quoted heredoc approach
-    // We pass the SQL via stdin to avoid shell injection on the SQL itself.
-    // docker exec -i allows stdin passthrough.
-    $safeContainer = 'postiz-postgres';
-    $cmd = 'docker exec -i ' . escapeshellarg($safeContainer)
-         . ' psql -U postiz-user postiz-db-local -t -A 2>&1';
-
-    $descriptors = [
-        0 => ['pipe', 'r'],  // stdin
-        1 => ['pipe', 'w'],  // stdout
-        2 => ['pipe', 'w'],  // stderr
-    ];
-    $proc = proc_open($cmd, $descriptors, $pipes);
-    if (!is_resource($proc)) {
-        return ['ok' => false, 'output' => '', 'error' => 'Failed to launch docker exec'];
-    }
-    fwrite($pipes[0], $sql);
-    fclose($pipes[0]);
-    $stdout = stream_get_contents($pipes[1]);
-    $stderr = stream_get_contents($pipes[2]);
-    fclose($pipes[1]);
-    fclose($pipes[2]);
-    $code = proc_close($proc);
-    if ($code !== 0) {
-        return ['ok' => false, 'output' => $stdout, 'error' => trim($stderr ?: $stdout)];
-    }
-    return ['ok' => true, 'output' => trim($stdout), 'error' => ''];
+if (!$bridgeBaseUrl) {
+    http_response_code(503);
+    echo json_encode(['ok' => false, 'error' => 'Bridge not configured — DB write ops require MK_BRIDGE_URL']);
+    exit;
 }
 
+// ── DB helpers via bridge ─────────────────────────────────────────────────────
+// All DB writes go through the mission-control-bridge /postiz-db endpoint,
+// which runs docker exec psql on the Pop OS server (where docker is available).
+// This works from both Bluehost production and local — same as Postiz API calls.
+
 /**
- * Fetch a single column value from the Post table for a given post ID.
- * Queries one column at a time to avoid pipe/newline parsing issues.
- * Returns the trimmed string value, or null if not found or on error.
+ * POST to the bridge /postiz-db endpoint.
+ * Returns decoded response array.
  */
-function mkPostizFetchSingleField(string $id, string $column): ?string {
-    $safeId = str_replace("'", "''", $id);
-    $sql    = "SELECT " . $column . " FROM \"Post\" "
-            . "WHERE id = '" . $safeId . "' AND \"deletedAt\" IS NULL LIMIT 1;";
-    $result = mkPostizExecSql($sql);
-    if (!$result['ok'] || $result['output'] === '') {
-        return null;
+function mkBridgeDbCall(string $baseUrl, string $authHeader, array $payload): array {
+    $url      = rtrim($baseUrl, '/') . '/postiz-db';
+    $jsonBody = json_encode($payload);
+    $ctx = stream_context_create(['http' => [
+        'method'        => 'POST',
+        'header'        => "Authorization: {$authHeader}\r\n"
+                         . "Content-Type: application/json\r\n"
+                         . 'Content-Length: ' . strlen($jsonBody),
+        'content'       => $jsonBody,
+        'timeout'       => 12,
+        'ignore_errors' => true,
+    ]]);
+    $body = @file_get_contents($url, false, $ctx);
+    if ($body === false) {
+        return ['ok' => false, 'error' => 'Bridge unreachable'];
     }
-    // psql -t -A outputs exactly one line for a single-column query.
-    // Take only the first line to guard against any trailing whitespace.
-    $line = explode("\n", $result['output'])[0];
-    return trim($line) !== '' ? trim($line) : null;
+    $data = json_decode($body, true);
+    return is_array($data) ? $data : ['ok' => false, 'error' => 'Invalid bridge response'];
 }
 
 // ── Postiz API helper (POST) ──────────────────────────────────────────────────
@@ -181,14 +164,14 @@ switch ($action) {
             echo json_encode(['ok' => false, 'error' => 'Missing content']);
             exit;
         }
-        $safeId      = str_replace("'", "''", $postId);
-        $safeContent = str_replace("'", "''", $content);
-        $sql = "UPDATE \"Post\" SET content = '" . $safeContent . "' "
-             . "WHERE id = '" . $safeId . "' AND state = 'DRAFT' AND \"deletedAt\" IS NULL;";
-        $result = mkPostizExecSql($sql);
-        if (!$result['ok']) {
+        $result = mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
+            'action'  => 'edit_content',
+            'id'      => $postId,
+            'content' => $content,
+        ]);
+        if (!($result['ok'] ?? false)) {
             http_response_code(500);
-            echo json_encode(['ok' => false, 'error' => 'DB update failed: ' . $result['error']]);
+            echo json_encode(['ok' => false, 'error' => 'DB update failed: ' . ($result['error'] ?? 'unknown')]);
             exit;
         }
         echo json_encode(['ok' => true]);
@@ -203,7 +186,6 @@ switch ($action) {
             echo json_encode(['ok' => false, 'error' => 'Missing publishDate']);
             exit;
         }
-        // Accept datetime-local format (YYYY-MM-DDTHH:MM) or ISO
         $ts = strtotime($publishDate);
         if (!$ts) {
             http_response_code(400);
@@ -215,15 +197,15 @@ switch ($action) {
             echo json_encode(['ok' => false, 'error' => 'Schedule date must be in the future']);
             exit;
         }
-        $isoDate    = date('c', $ts);
-        $safeId     = str_replace("'", "''", $postId);
-        $safeDt     = str_replace("'", "''", $isoDate);
-        $sql = "UPDATE \"Post\" SET \"publishDate\" = '" . $safeDt . "', state = 'QUEUE' "
-             . "WHERE id = '" . $safeId . "' AND state IN ('DRAFT','QUEUE') AND \"deletedAt\" IS NULL;";
-        $result = mkPostizExecSql($sql);
-        if (!$result['ok']) {
+        $isoDate = date('c', $ts);
+        $result  = mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
+            'action'      => 'reschedule',
+            'id'          => $postId,
+            'publishDate' => $isoDate,
+        ]);
+        if (!($result['ok'] ?? false)) {
             http_response_code(500);
-            echo json_encode(['ok' => false, 'error' => 'DB update failed: ' . $result['error']]);
+            echo json_encode(['ok' => false, 'error' => 'DB update failed: ' . ($result['error'] ?? 'unknown')]);
             exit;
         }
         echo json_encode(['ok' => true, 'publishDate' => $isoDate]);
@@ -232,13 +214,13 @@ switch ($action) {
 
     // ── delete: soft-delete a DRAFT post ─────────────────────────────────────
     case 'delete': {
-        $safeId = str_replace("'", "''", $postId);
-        $sql = "UPDATE \"Post\" SET \"deletedAt\" = NOW() "
-             . "WHERE id = '" . $safeId . "' AND state = 'DRAFT' AND \"deletedAt\" IS NULL;";
-        $result = mkPostizExecSql($sql);
-        if (!$result['ok']) {
+        $result = mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
+            'action' => 'delete',
+            'id'     => $postId,
+        ]);
+        if (!($result['ok'] ?? false)) {
             http_response_code(500);
-            echo json_encode(['ok' => false, 'error' => 'DB delete failed: ' . $result['error']]);
+            echo json_encode(['ok' => false, 'error' => 'DB delete failed: ' . ($result['error'] ?? 'unknown')]);
             exit;
         }
         echo json_encode(['ok' => true]);
@@ -247,28 +229,29 @@ switch ($action) {
 
     // ── publish_now: post immediately via Postiz public API ──────────────────
     // Strategy:
-    //   1. Read state, integrationId, image from DB (separate queries — safe against pipe chars)
-    //   2. Soft-delete the draft
+    //   1. Fetch state, integrationId, content, image from DB via bridge
+    //   2. Soft-delete the draft via bridge
     //   3. POST new post via Postiz API with type=now
-    //   On step 3 failure: restore the draft (rollback) so the user doesn't lose the post.
+    //   On step 3 failure: restore the draft via bridge so no data loss.
     case 'publish_now': {
         $contentOverride = $body['content'] ?? null;
-        $safeId          = str_replace("'", "''", $postId);
 
-        // Read required fields individually (C2: avoids pipe-split corruption)
-        $state         = mkPostizFetchSingleField($postId, 'state');
-        $integrationId = mkPostizFetchSingleField($postId, '"integrationId"');
-        $dbContent     = mkPostizFetchSingleField($postId, 'content');
-        $imageRaw      = mkPostizFetchSingleField($postId, 'image');
+        // Step 0: read post fields from DB via bridge
+        $fields = mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
+            'action' => 'fetch_fields',
+            'id'     => $postId,
+        ]);
 
-        if ($state === null) {
+        if (!($fields['ok'] ?? false) || !isset($fields['state'])) {
             http_response_code(503);
-            echo json_encode([
-                'ok'    => false,
-                'error' => 'Could not read post from DB (docker exec may be unavailable on this host).',
-            ]);
+            echo json_encode(['ok' => false, 'error' => 'Could not read post from DB via bridge: ' . ($fields['error'] ?? 'unknown')]);
             exit;
         }
+
+        $state         = $fields['state'];
+        $integrationId = $fields['integrationId'] ?? null;
+        $dbContent     = $fields['content'] ?? null;
+        $imageRaw      = $fields['image'] ?? null;
 
         if (!in_array($state, ['DRAFT', 'QUEUE'], true)) {
             http_response_code(409);
@@ -285,12 +268,13 @@ switch ($action) {
         $content = $contentOverride ?? $dbContent ?? '';
 
         // Step 1: soft-delete the draft
-        $delSql = "UPDATE \"Post\" SET \"deletedAt\" = NOW() "
-                . "WHERE id = '" . $safeId . "' AND \"deletedAt\" IS NULL;";
-        $delResult = mkPostizExecSql($delSql);
-        if (!$delResult['ok']) {
+        $delResult = mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
+            'action' => 'soft_delete',
+            'id'     => $postId,
+        ]);
+        if (!($delResult['ok'] ?? false)) {
             http_response_code(500);
-            echo json_encode(['ok' => false, 'error' => 'Failed to retire old draft: ' . $delResult['error']]);
+            echo json_encode(['ok' => false, 'error' => 'Failed to retire old draft: ' . ($delResult['error'] ?? 'unknown')]);
             exit;
         }
 
@@ -306,7 +290,7 @@ switch ($action) {
             ]],
         ];
 
-        // Include image if the original post had one (H1: don't drop media)
+        // Include image if the original post had one (don't drop media on publish)
         if ($imageRaw) {
             $imageArr = json_decode($imageRaw, true);
             if (is_array($imageArr) && !empty($imageArr)) {
@@ -320,10 +304,11 @@ switch ($action) {
 
         $response = mkPostizApiPost($apiUrl, $payload, $postizAuthHeader);
         if (!$response) {
-            // H2: Rollback — restore the draft so the user doesn't lose the post
-            $restoreSql = "UPDATE \"Post\" SET \"deletedAt\" = NULL "
-                        . "WHERE id = '" . $safeId . "';";
-            mkPostizExecSql($restoreSql);
+            // Rollback: restore the draft so no data loss
+            mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
+                'action' => 'restore',
+                'id'     => $postId,
+            ]);
             http_response_code(502);
             echo json_encode([
                 'ok'    => false,
