@@ -1259,6 +1259,10 @@ renderHeader('Marketing', [
         <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#notebook-pen"></use></svg>
         Pop-Mark Log
       </a>
+      <a href="/port/marketing/social-posts.php" class="mk-quicklinks__link">
+        <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#calendar-days"></use></svg>
+        Social Posts
+      </a>
       <span class="mk-quicklinks__link mk-quicklinks__link--stub" title="Coming soon">
         <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#file-bar-chart"></use></svg>
         Reports
