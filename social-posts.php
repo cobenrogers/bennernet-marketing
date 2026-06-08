@@ -661,6 +661,46 @@ renderHeader('Social Posts — Marketing', [
 @media (max-width: 480px) {
   .mk-post-card__account { display: none; }
 }
+
+/* Confirm modal */
+.mk-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+}
+.mk-modal-backdrop[hidden] { display: none; }
+.mk-modal {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-6);
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+.mk-modal__title {
+  font-family: var(--font-heading);
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-3);
+}
+.mk-modal__body {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-6);
+  line-height: 1.5;
+}
+.mk-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
 </style>
 
 <meta name="csrf-token" content="<?= h($csrfToken) ?>">
@@ -903,6 +943,19 @@ renderHeader('Social Posts — Marketing', [
 
 </div><!-- /.mk-page -->
 
+<!-- ── Confirm modal ─────────────────────────────────────────────────────────── -->
+<div class="mk-modal-backdrop" id="mk-confirm-modal" hidden role="dialog"
+     aria-modal="true" aria-labelledby="mk-modal-title">
+  <div class="mk-modal">
+    <h2 class="mk-modal__title" id="mk-modal-title"></h2>
+    <p class="mk-modal__body" id="mk-modal-body"></p>
+    <div class="mk-modal__actions">
+      <button type="button" class="btn btn--sm btn--secondary" id="mk-modal-cancel">Cancel</button>
+      <button type="button" class="btn btn--sm btn--primary"   id="mk-modal-confirm" data-variant="primary">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function () {
   'use strict';
@@ -950,6 +1003,42 @@ renderHeader('Social Posts — Marketing', [
 
   var csrfToken = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
 
+  // ── Confirm modal ─────────────────────────────────────────────────────────
+  var _modalBackdrop = document.getElementById('mk-confirm-modal');
+  var _modalTitle    = document.getElementById('mk-modal-title');
+  var _modalBody     = document.getElementById('mk-modal-body');
+  var _modalCancel   = document.getElementById('mk-modal-cancel');
+  var _modalConfirm  = document.getElementById('mk-modal-confirm');
+  var _modalCallback = null;
+  var _modalPrevFocus = null;
+
+  function showConfirm(title, body, confirmLabel, onConfirm, danger) {
+    _modalTitle.textContent   = title;
+    _modalBody.textContent    = body;
+    _modalConfirm.textContent = confirmLabel || 'Confirm';
+    _modalConfirm.className   = 'btn btn--sm ' + (danger ? 'btn--danger' : 'btn--primary');
+    _modalCallback   = onConfirm;
+    _modalPrevFocus  = document.activeElement;
+    _modalBackdrop.hidden = false;
+    _modalConfirm.focus();
+  }
+
+  function _closeModal(confirmed) {
+    _modalBackdrop.hidden = true;
+    if (_modalPrevFocus) { _modalPrevFocus.focus(); }
+    if (confirmed && _modalCallback) { _modalCallback(); }
+    _modalCallback = null;
+  }
+
+  _modalCancel.addEventListener('click',  function () { _closeModal(false); });
+  _modalConfirm.addEventListener('click', function () { _closeModal(true); });
+  _modalBackdrop.addEventListener('click', function (e) {
+    if (e.target === _modalBackdrop) { _closeModal(false); }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (!_modalBackdrop.hidden && e.key === 'Escape') { _closeModal(false); }
+  });
+
   function callApi(postId, payload, onSuccess, onError) {
     var url = '/port/marketing/social-posts-api.php';
     fetch(url, {
@@ -994,22 +1083,28 @@ renderHeader('Social Posts — Marketing', [
   // ── Post Now ──────────────────────────────────────────────────────────────
   document.querySelectorAll('.mk-action-publish-now').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      if (!confirm('Post this now? This will publish immediately to the platform.')) { return; }
       var postId  = btn.dataset.postId;
       var content = document.getElementById('content-' + postId).value;
-      btn.disabled = true;
-      btn.textContent = 'Posting…';
-      callApi(
-        postId,
-        { action: 'publish_now', id: postId, content: content },
+      showConfirm(
+        'Post Now',
+        'This will publish immediately to the platform. Are you sure?',
+        'Post Now',
         function () {
-          showFeedback(postId, 'success', 'Posted! Refresh to see updated state.');
-          btn.textContent = 'Posted ✓';
-        },
-        function (err) {
-          showFeedback(postId, 'error', 'Failed: ' + err);
-          btn.disabled = false;
-          btn.textContent = 'Post Now';
+          btn.disabled = true;
+          btn.textContent = 'Posting…';
+          callApi(
+            postId,
+            { action: 'publish_now', id: postId, content: content },
+            function () {
+              showFeedback(postId, 'success', 'Posted! Refresh to see updated state.');
+              btn.textContent = 'Posted ✓';
+            },
+            function (err) {
+              showFeedback(postId, 'error', 'Failed: ' + err);
+              btn.disabled = false;
+              btn.textContent = 'Post Now';
+            }
+          );
         }
       );
     });
@@ -1044,24 +1139,31 @@ renderHeader('Social Posts — Marketing', [
   // ── Delete draft ──────────────────────────────────────────────────────────
   document.querySelectorAll('.mk-action-delete').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      if (!confirm('Delete this draft permanently?')) { return; }
       var postId = btn.dataset.postId;
-      btn.disabled = true;
-      callApi(
-        postId,
-        { action: 'delete', id: postId },
+      showConfirm(
+        'Delete Draft',
+        'This will permanently delete the draft. This cannot be undone.',
+        'Delete',
         function () {
-          var card = document.getElementById('card-' + postId);
-          if (card) {
-            card.style.opacity = '0.4';
-            card.style.transition = 'opacity 0.3s';
-            setTimeout(function () { card.remove(); }, 350);
-          }
+          btn.disabled = true;
+          callApi(
+            postId,
+            { action: 'delete', id: postId },
+            function () {
+              var card = document.getElementById('card-' + postId);
+              if (card) {
+                card.style.opacity = '0.4';
+                card.style.transition = 'opacity 0.3s';
+                setTimeout(function () { card.remove(); }, 350);
+              }
+            },
+            function (err) {
+              showFeedback(postId, 'error', 'Delete failed: ' + err);
+              btn.disabled = false;
+            }
+          );
         },
-        function (err) {
-          showFeedback(postId, 'error', 'Delete failed: ' + err);
-          btn.disabled = false;
-        }
+        true  /* danger — red confirm button */
       );
     });
   });
