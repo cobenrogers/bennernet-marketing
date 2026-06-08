@@ -291,9 +291,11 @@ switch ($action) {
             }
         }
 
-        // Derive settings.__type from integration provider (required by API)
-        $postType = 'post';
-        $settings = ['__type' => $provider ?: 'social', 'post_type' => $postType];
+        // Derive settings per platform (all require __type + post_type; X also requires who_can_reply_post)
+        $settings = ['__type' => $provider ?: 'social', 'post_type' => 'post'];
+        if ($provider === 'x' || $provider === 'twitter') {
+            $settings['who_can_reply_post'] = 'everyone';
+        }
 
         $apiUrl  = $postizBaseUrl . '/api/public/v1/posts';
         $payload = [
