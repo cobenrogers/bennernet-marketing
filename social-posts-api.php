@@ -250,6 +250,7 @@ switch ($action) {
 
         $state         = $fields['state'];
         $integrationId = $fields['integrationId'] ?? null;
+        $provider      = strtolower($fields['provider'] ?? '');
         $dbContent     = $fields['content'] ?? null;
         $imageRaw      = $fields['image'] ?? null;
 
@@ -279,28 +280,33 @@ switch ($action) {
         }
 
         // Step 2: POST new post via Postiz API with type=now
+        // Resolve image array — API requires image to be an array (even empty)
+        $imageArr = [];
+        if ($imageRaw) {
+            $decoded = json_decode($imageRaw, true);
+            if (is_array($decoded) && !empty($decoded)) {
+                $imageArr = $decoded;
+            } elseif (is_string($imageRaw) && str_starts_with($imageRaw, 'http')) {
+                $imageArr = [['id' => $imageRaw, 'url' => $imageRaw, 'path' => $imageRaw]];
+            }
+        }
+
+        // Derive settings.__type from integration provider (required by API)
+        $postType = 'post';
+        $settings = ['__type' => $provider ?: 'social', 'post_type' => $postType];
+
         $apiUrl  = $postizBaseUrl . '/api/public/v1/posts';
         $payload = [
             'type'      => 'now',
+            'date'      => date('c'),  // required by API even for type=now
             'shortLink' => false,
             'tags'      => [],
             'posts'     => [[
                 'integration' => ['id' => $integrationId],
-                'value'       => [['content' => $content]],
+                'value'       => [['content' => $content, 'image' => $imageArr]],
+                'settings'    => $settings,
             ]],
         ];
-
-        // Include image if the original post had one (don't drop media on publish)
-        if ($imageRaw) {
-            $imageArr = json_decode($imageRaw, true);
-            if (is_array($imageArr) && !empty($imageArr)) {
-                $payload['posts'][0]['value'][0]['image'] = $imageArr;
-            } elseif (is_string($imageRaw) && str_starts_with($imageRaw, 'http')) {
-                $payload['posts'][0]['value'][0]['image'] = [
-                    ['id' => $imageRaw, 'url' => $imageRaw, 'path' => $imageRaw],
-                ];
-            }
-        }
 
         $response = mkPostizApiPost($apiUrl, $payload, $postizAuthHeader);
         if (!$response) {
