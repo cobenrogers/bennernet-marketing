@@ -2,3 +2,7 @@
 /vendor/
 *.log
 .phpunit.result.cache
+
+# Python bytecode
+__pycache__/
+*.pyc
