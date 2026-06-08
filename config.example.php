@@ -22,7 +22,7 @@ define('MK_GA4_CREDENTIALS_PATH', '/home2/mirdiwmy/keys/ga4-marketing.json');
 define('MK_GA4_PROPERTY_GLYC', '518966874');  // getglyc.com — account 379804471
 define('MK_GA4_PROPERTY_IBD',  '501432462');  // ibdmovement.com — account 365443199
 // Bluesky — public API (no token); follower counts via bsky.app actor profile
-define('MK_BLUESKY_HANDLE_GLYC', 'bennernet.bsky.social');
+define('MK_BLUESKY_HANDLE_GLYC', 'getglyc.com');  // Glyc Bluesky handle is the domain, NOT bennernet.bsky.social
 define('MK_BLUESKY_HANDLE_IBD',  'ibdmovement.bsky.social');
 // Mastodon — public API (no token); follower counts via /api/v1/accounts/lookup
 define('MK_MASTODON_INSTANCE_GLYC', 'mastodon.social');
