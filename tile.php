@@ -669,6 +669,14 @@ $ibdBskyPrior7d  = mkHistoryPrior($history, 'ibd',  'social_bsky_followers', 7);
 $glycMastoPrior7d = mkHistoryPrior($history, 'glyc', 'social_masto_followers', 7);
 $ibdMastoPrior7d  = mkHistoryPrior($history, 'ibd',  'social_masto_followers', 7);
 
+// Instagram follower counts from history store (collected daily by
+// collect_social_metrics.py via the Postiz DB Graph API token — no live
+// Graph call needed here). 7-day prior for delta.
+$glycInstaFollowers = mkHistoryLatest($history, 'glyc', 'social_ig_followers');
+$ibdInstaFollowers  = mkHistoryLatest($history, 'ibd',  'social_ig_followers');
+$glycInstaPrior7d   = mkHistoryPrior($history, 'glyc', 'social_ig_followers', 7);
+$ibdInstaPrior7d    = mkHistoryPrior($history, 'ibd',  'social_ig_followers', 7);
+
 // Postiz integration IDs (from running Postiz instance)
 // - cmouj99190001pi8h1f0upfga  = Glyc (Bluesky / bennernet.bsky.social)
 // - cmpbj9osm0008poec8q68tlgo  = IBD Movement (Bluesky / ibdmovement.bsky.social)
@@ -828,6 +836,11 @@ $glycMetrics = [
     $xGlyc !== null
         ? mkMetric('X followers', $xGlyc['followers'], null, 'raw', 'neutral')
         : mkMetricStub('X followers'),
+    $glycInstaFollowers !== null
+        ? mkMetric('Instagram followers', (int)$glycInstaFollowers,
+            ($glycInstaPrior7d !== null ? sprintf('%+d vs 7d ago', (int)$glycInstaFollowers - (int)$glycInstaPrior7d) : null),
+            'raw', $glycInstaFollowers >= ($glycInstaPrior7d ?? $glycInstaFollowers) ? 'positive' : 'negative')
+        : mkMetricStub('Instagram followers'),
     $glycPublished !== null
         ? mkMetric('Posts published', $glycPublished, $glycPostsDelta, 'raw', 'neutral')
         : mkMetricStub('Posts published'),
@@ -909,6 +922,11 @@ $ibdMetrics = [
     $xIbd !== null
         ? mkMetric('X followers', $xIbd['followers'], null, 'raw', 'neutral')
         : mkMetricStub('X followers'),
+    $ibdInstaFollowers !== null
+        ? mkMetric('Instagram followers', (int)$ibdInstaFollowers,
+            ($ibdInstaPrior7d !== null ? sprintf('%+d vs 7d ago', (int)$ibdInstaFollowers - (int)$ibdInstaPrior7d) : null),
+            'raw', $ibdInstaFollowers >= ($ibdInstaPrior7d ?? $ibdInstaFollowers) ? 'positive' : 'negative')
+        : mkMetricStub('Instagram followers'),
     $ibdPublished !== null
         ? mkMetric('Posts published', $ibdPublished, $ibdPostsDelta, 'raw', 'neutral')
         : mkMetricStub('Posts published'),
