@@ -694,10 +694,10 @@ $postizCounts = mkPostizPostCounts();
 $secrets          = mkSecrets();
 $glycBskyHandle   = defined('MK_BLUESKY_HANDLE_GLYC') && MK_BLUESKY_HANDLE_GLYC !== ''
     ? MK_BLUESKY_HANDLE_GLYC
-    : ($secrets['bluesky_handle'] ?? '');
+    : ($secrets['bluesky_handle'] ?? 'bennernet.bsky.social');
 $ibdBskyHandle    = defined('MK_BLUESKY_HANDLE_IBD') && MK_BLUESKY_HANDLE_IBD !== ''
     ? MK_BLUESKY_HANDLE_IBD
-    : ($secrets['bluesky_ibdmovement_handle'] ?? '');
+    : ($secrets['bluesky_ibdmovement_handle'] ?? 'ibdmovement.bsky.social');
 $bskyGlyc         = mkBlueskyFollowers($glycBskyHandle);
 $bskyIbd          = mkBlueskyFollowers($ibdBskyHandle);
 $gscGlyc      = mkGscTotals('sc-domain:getglyc.com',    7);
