@@ -5,8 +5,8 @@
 `social-posts.php` is a journal-style view of all Postiz social media posts
 (−30 days to +30 days from today). Posts are grouped by date under datestamp
 headers and sorted newest-first. An inline expand panel on each post row
-enables editing content, rescheduling, publishing immediately, and deleting
-drafts — without leaving the page.
+shows the **post image**, enables editing content, rescheduling, publishing
+immediately, and deleting drafts — without leaving the page.
 
 `social-posts-api.php` is the write-operations backend called by the JavaScript
 in `social-posts.php` via `fetch()`.
@@ -22,7 +22,10 @@ in `social-posts.php` via `fetch()`.
 | GET | `/api/public/v1/posts?startDate=…&endDate=…&take=500` | Fetch all posts in window |
 | GET | `/api/public/v1/integrations` | Fetch channel integrations for account name display |
 
-Auth: `Authorization: Bearer MK_POSTIZ_TOKEN`
+Auth: `Authorization: Bearer MK_BRIDGE_TOKEN` (routed through bridge proxy)
+
+**Note:** The Postiz public API does **not** return image data. Images are
+fetched separately from the DB via the bridge (see Image Fetch section below).
 
 Both calls fall back gracefully to a `.mk-notice--warn` if the API is
 unreachable.
@@ -38,6 +41,21 @@ unreachable.
 
 Request body: `{ action, id, content?, publishDate? }`
 Response: `{ ok: true }` or `{ ok: false, error: "…" }`
+
+### Bridge DB — image fetch (social-posts.php read path)
+
+| Action | Endpoint | Description |
+|--------|----------|-------------|
+| `fetch_images_bulk` | `POST /postiz-db` | Batch-fetch image URLs for all displayed post IDs |
+
+Request body: `{ action: "fetch_images_bulk", ids: ["id1","id2",...] }`
+Response: `{ ok: true, images: { "id1": "https://...", "id2": null, ... } }`
+
+After fetching posts from the Postiz API, `social-posts.php` sends all post IDs
+to the bridge in one call. The bridge queries the `Post.image` column (a JSON
+array `[{"path":"https://..."}]`) for all IDs in a single `WHERE id IN (...)`
+query and returns a flat `{postId: url}` map. This is used to populate the image
+panel in each expanded post card.
 
 ---
 
@@ -107,6 +125,7 @@ PHP (data layer)
   ├── requireModuleAccess('marketing', 'viewer')
   ├── Fetch posts via Postiz API (startDate -30d, endDate +30d, take=500)
   ├── Fetch integrations for account name resolution
+  ├── Fetch images for all post IDs via bridge fetch_images_bulk (1 DB query)
   ├── Filter by ?filter= tab (all/draft/scheduled/published/error)
   ├── Group posts by date key (Y-m-d), sort newest-first
   └── Render
@@ -166,8 +185,9 @@ Route on action:
 1. **Bridge dependency for write ops** — write ops require the
    mission-control-bridge to be reachable via Tailscale Funnel. If the bridge
    is down, all write actions return 503. Read-only list view always works.
-2. **No image upload** — the inline panel shows the image from the API response.
-   Uploading a new image is not implemented.
+2. **No image upload** — the inline panel displays the post's existing image
+   (fetched from the DB via bridge). Uploading or replacing an image is not
+   implemented.
 3. **No pagination** — fetches up to 500 posts in the 60-day window. If volume
    grows beyond that, add `&page=` pagination or shrink the date window.
 4. **publish_now creates a new post** — the old draft is soft-deleted and a
