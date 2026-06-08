@@ -379,3 +379,14 @@ date,property,metric,value,unit_window,source
 2026-06-08,ibd,social_masto_boosts_last10,3,last10,mastodon_api
 2026-06-08,glyc,indexed_pages,117,snapshot,browser-automation (gsc-ui)
 2026-06-08,ibd,indexed_pages,105,snapshot,browser-automation (gsc-ui)
+2026-06-08,glyc,social_bsky_followers,60,snapshot,bluesky_api
+2026-06-08,glyc,social_bsky_likes_last10,16,last10,bluesky_api
+2026-06-08,glyc,social_bsky_reposts_last10,2,last10,bluesky_api
+2026-06-08,glyc,social_ig_followers,45,snapshot,instagram_api
+2026-06-08,glyc,social_ig_likes_last10,10,last10,instagram_api
+2026-06-08,glyc,social_ig_comments_last10,0,last10,instagram_api
+2026-06-08,glyc,social_ig_reach_last10,88,last10,instagram_api
+2026-06-08,ibd,social_ig_followers,26,snapshot,instagram_api
+2026-06-08,ibd,social_ig_likes_last10,15,last10,instagram_api
+2026-06-08,ibd,social_ig_comments_last10,0,last10,instagram_api
+2026-06-08,ibd,social_ig_reach_last10,45,last10,instagram_api

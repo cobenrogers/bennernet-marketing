@@ -34,7 +34,7 @@ APPEND_SCRIPT = os.path.join(REPO_ROOT, "scripts", "append_metrics.py")
 
 ACCOUNTS = {
     "glyc": {
-        "bluesky": "bennernet.bsky.social",
+        "bluesky": "getglyc.com",
         "mastodon_user": "glyc",
         "mastodon_server": "mastodon.social",
     },
@@ -46,8 +46,8 @@ ACCOUNTS = {
 }
 
 INSTAGRAM_INTEGRATIONS = {
-    "glyc": "cmpxao9hi0001l98ug11boce1",
-    "ibd": "cmpxapemc0003l98uovf90xs9",
+    "glyc": "cmq2rp6l1001ol98ugo3dz6oh",
+    "ibd": "cmq142urk0017l98u8phwixop",
 }
 
 INSTAGRAM_GRAPH_BASE = "https://graph.facebook.com/v21.0"
