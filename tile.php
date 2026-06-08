@@ -676,12 +676,16 @@ $ibdMastoPrior7d  = mkHistoryPrior($history, 'ibd',  'social_masto_followers', 7
 // - cmouqudgd0003o08gq5w1q3jj  = The IBD Movement (Mastodon / ibdmovement profile)
 // - cmpbr9le70003mo8mzzg84o2d  = Glyc (X / getglyc)
 // - cmpbr6c0n0001mo8mj5m2d3hx  = IBD Movement (X / IBDMovement)
-const POSTIZ_ID_GLYC_MASTODON = 'cmouqqkw70001o08gts5rpnyb';
-const POSTIZ_ID_IBD_MASTODON  = 'cmouqudgd0003o08gq5w1q3jj';
-const POSTIZ_ID_GLYC_BLUESKY  = 'cmouj99190001pi8h1f0upfga';
-const POSTIZ_ID_IBD_BLUESKY   = 'cmpbj9osm0008poec8q68tlgo';
-const POSTIZ_ID_GLYC_X        = 'cmpbr9le70003mo8mzzg84o2d';
-const POSTIZ_ID_IBD_X         = 'cmpbr6c0n0001mo8mj5m2d3hx';
+// - cmq2rp6l1001ol98ugo3dz6oh  = Glyc (Instagram / getglyc)
+// - cmq142urk0017l98u8phwixop  = IBD Movement (Instagram / theibdmovement)
+const POSTIZ_ID_GLYC_MASTODON   = 'cmouqqkw70001o08gts5rpnyb';
+const POSTIZ_ID_IBD_MASTODON    = 'cmouqudgd0003o08gq5w1q3jj';
+const POSTIZ_ID_GLYC_BLUESKY    = 'cmouj99190001pi8h1f0upfga';
+const POSTIZ_ID_IBD_BLUESKY     = 'cmpbj9osm0008poec8q68tlgo';
+const POSTIZ_ID_GLYC_X          = 'cmpbr9le70003mo8mzzg84o2d';
+const POSTIZ_ID_IBD_X           = 'cmpbr6c0n0001mo8mj5m2d3hx';
+const POSTIZ_ID_GLYC_INSTAGRAM  = 'cmq2rp6l1001ol98ugo3dz6oh';
+const POSTIZ_ID_IBD_INSTAGRAM   = 'cmq142urk0017l98u8phwixop';
 
 $postizCounts = mkPostizPostCounts();
 
@@ -756,8 +760,10 @@ $glycGscImpressions  = $gscGlyc !== null ? $gscGlyc['impressions'] : null;
 $glycGscCtr          = $gscGlyc !== null ? $gscGlyc['ctr']         : null;
 $glycGscPosition     = $gscGlyc !== null ? $gscGlyc['position']    : null;
 $glycGscPriorClicks  = $gscGlycPrior !== null ? $gscGlycPrior['clicks'] : null;
-$glycXPublished = mkPostizPublished($postizCounts, POSTIZ_ID_GLYC_X);
-$glycXQueued    = mkPostizQueued($postizCounts, POSTIZ_ID_GLYC_X);
+$glycXPublished         = mkPostizPublished($postizCounts, POSTIZ_ID_GLYC_X);
+$glycXQueued            = mkPostizQueued($postizCounts, POSTIZ_ID_GLYC_X);
+$glycInstaPublished     = mkPostizPublished($postizCounts, POSTIZ_ID_GLYC_INSTAGRAM);
+$glycInstaQueued        = mkPostizQueued($postizCounts, POSTIZ_ID_GLYC_INSTAGRAM);
 
 $glycPostsDelta = null;
 if ($glycQueued > 0) {
@@ -767,6 +773,11 @@ if ($glycQueued > 0) {
 $glycXPostsDelta = null;
 if ($glycXQueued > 0) {
     $glycXPostsDelta = '+' . $glycXQueued . ' scheduled';
+}
+
+$glycInstaPostsDelta = null;
+if ($glycInstaQueued > 0) {
+    $glycInstaPostsDelta = '+' . $glycInstaQueued . ' scheduled';
 }
 
 // Engaged sessions from history store (28d, de-botted) with target progress
@@ -823,6 +834,9 @@ $glycMetrics = [
     $glycXPublished !== null
         ? mkMetric('X posts published', $glycXPublished, $glycXPostsDelta, 'raw', 'neutral')
         : mkMetricStub('X posts published'),
+    $glycInstaPublished !== null
+        ? mkMetric('Instagram posts published', $glycInstaPublished, $glycInstaPostsDelta, 'raw', 'neutral')
+        : mkMetricStub('Instagram posts published'),
 ];
 
 // Glyc status: online if we have at least one live source
@@ -838,8 +852,10 @@ $ibdGscImpressions    = $gscIbd !== null ? $gscIbd['impressions'] : null;
 $ibdGscCtr            = $gscIbd !== null ? $gscIbd['ctr']         : null;
 $ibdGscPosition       = $gscIbd !== null ? $gscIbd['position']    : null;
 $ibdGscPriorClicks    = $gscIbdPrior !== null ? $gscIbdPrior['clicks'] : null;
-$ibdXPublished = mkPostizPublished($postizCounts, POSTIZ_ID_IBD_X);
-$ibdXQueued    = mkPostizQueued($postizCounts, POSTIZ_ID_IBD_X);
+$ibdXPublished      = mkPostizPublished($postizCounts, POSTIZ_ID_IBD_X);
+$ibdXQueued         = mkPostizQueued($postizCounts, POSTIZ_ID_IBD_X);
+$ibdInstaPublished  = mkPostizPublished($postizCounts, POSTIZ_ID_IBD_INSTAGRAM);
+$ibdInstaQueued     = mkPostizQueued($postizCounts, POSTIZ_ID_IBD_INSTAGRAM);
 
 $ibdPostsDelta = null;
 if ($ibdQueued > 0) {
@@ -849,6 +865,11 @@ if ($ibdQueued > 0) {
 $ibdXPostsDelta = null;
 if ($ibdXQueued > 0) {
     $ibdXPostsDelta = '+' . $ibdXQueued . ' scheduled';
+}
+
+$ibdInstaPostsDelta = null;
+if ($ibdInstaQueued > 0) {
+    $ibdInstaPostsDelta = '+' . $ibdInstaQueued . ' scheduled';
 }
 
 $ibdMetrics = [
@@ -894,6 +915,9 @@ $ibdMetrics = [
     $ibdXPublished !== null
         ? mkMetric('X posts published', $ibdXPublished, $ibdXPostsDelta, 'raw', 'neutral')
         : mkMetricStub('X posts published'),
+    $ibdInstaPublished !== null
+        ? mkMetric('Instagram posts published', $ibdInstaPublished, $ibdInstaPostsDelta, 'raw', 'neutral')
+        : mkMetricStub('Instagram posts published'),
 ];
 
 $ibdSourcesOk = ($ibdGscClicks !== null) || ($ibdPublished !== null) || ($mastoIbd !== null) || ($bskyIbd !== null) || ($xIbd !== null);

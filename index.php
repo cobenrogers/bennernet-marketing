@@ -82,10 +82,12 @@ $glycGscCtr          = null;
 $ibdGscCtr           = null;
 $glycGscPosition     = null;
 $ibdGscPosition      = null;
-$glycBskyFollowers  = null;
-$ibdBskyFollowers   = null;
-$glycXFollowers     = null;
-$ibdXFollowers      = null;
+$glycBskyFollowers   = null;
+$ibdBskyFollowers    = null;
+$glycXFollowers      = null;
+$ibdXFollowers       = null;
+$glycInstaFollowers  = null;
+$ibdInstaFollowers   = null;
 $glycGa4Users       = null;
 $ibdGa4Users        = null;
 $glycSparkline      = null;
@@ -128,6 +130,9 @@ if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children
             } elseif ($label === 'X followers') {
                 if ($isGlyc) $glycXFollowers = $value;
                 if ($isIbd)  $ibdXFollowers  = $value;
+            } elseif (stripos($label, 'instagram followers') !== false) {
+                if ($isGlyc) $glycInstaFollowers = $value;
+                if ($isIbd)  $ibdInstaFollowers  = $value;
             } elseif (stripos($label, 'users') !== false) {
                 if ($isGlyc) $glycGa4Users = $value;
                 if ($isIbd)  $ibdGa4Users  = $value;
@@ -147,12 +152,14 @@ if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children
 $campaignData = $tileCache['campaign_data'] ?? null;
 
 // ── Postiz integration IDs (mirrors tile.php constants) ──────────────────────
-if (!defined('POSTIZ_ID_GLYC_MASTODON')) define('POSTIZ_ID_GLYC_MASTODON', 'cmouqqkw70001o08gts5rpnyb');
-if (!defined('POSTIZ_ID_IBD_MASTODON'))  define('POSTIZ_ID_IBD_MASTODON',  'cmouqudgd0003o08gq5w1q3jj');
-if (!defined('POSTIZ_ID_GLYC_BLUESKY'))  define('POSTIZ_ID_GLYC_BLUESKY',  'cmouj99190001pi8h1f0upfga');
-if (!defined('POSTIZ_ID_IBD_BLUESKY'))   define('POSTIZ_ID_IBD_BLUESKY',   'cmpbj9osm0008poec8q68tlgo');
-if (!defined('POSTIZ_ID_GLYC_X'))        define('POSTIZ_ID_GLYC_X',        'cmpbr9le70003mo8mzzg84o2d');
-if (!defined('POSTIZ_ID_IBD_X'))         define('POSTIZ_ID_IBD_X',         'cmpbr6c0n0001mo8mj5m2d3hx');
+if (!defined('POSTIZ_ID_GLYC_MASTODON'))   define('POSTIZ_ID_GLYC_MASTODON',   'cmouqqkw70001o08gts5rpnyb');
+if (!defined('POSTIZ_ID_IBD_MASTODON'))    define('POSTIZ_ID_IBD_MASTODON',    'cmouqudgd0003o08gq5w1q3jj');
+if (!defined('POSTIZ_ID_GLYC_BLUESKY'))    define('POSTIZ_ID_GLYC_BLUESKY',    'cmouj99190001pi8h1f0upfga');
+if (!defined('POSTIZ_ID_IBD_BLUESKY'))     define('POSTIZ_ID_IBD_BLUESKY',     'cmpbj9osm0008poec8q68tlgo');
+if (!defined('POSTIZ_ID_GLYC_X'))          define('POSTIZ_ID_GLYC_X',          'cmpbr9le70003mo8mzzg84o2d');
+if (!defined('POSTIZ_ID_IBD_X'))           define('POSTIZ_ID_IBD_X',           'cmpbr6c0n0001mo8mj5m2d3hx');
+if (!defined('POSTIZ_ID_GLYC_INSTAGRAM'))  define('POSTIZ_ID_GLYC_INSTAGRAM',  'cmq2rp6l1001ol98ugo3dz6oh');
+if (!defined('POSTIZ_ID_IBD_INSTAGRAM'))   define('POSTIZ_ID_IBD_INSTAGRAM',   'cmq142urk0017l98u8phwixop');
 
 // ── Data: Postiz queue status ─────────────────────────────────────────────────
 $postizQueueCount       = null;
@@ -258,13 +265,15 @@ function mkConvRate(int $sessions, int $signups): ?string {
 function mkPostizPostPlatform(array $post): string {
     $intg = $post['integration'] ?? [];
     $type = strtolower($intg['type'] ?? $intg['provider'] ?? $intg['providerIdentifier'] ?? '');
-    if (str_contains($type, 'bluesky') || str_contains($type, 'bsky')) return 'Bluesky';
-    if (str_contains($type, 'mastodon'))                                return 'Mastodon';
+    if (str_contains($type, 'bluesky') || str_contains($type, 'bsky'))                  return 'Bluesky';
+    if (str_contains($type, 'mastodon'))                                                  return 'Mastodon';
     if (str_contains($type, 'twitter') || $type === 'x' || str_contains($type, '_x_')) return 'X/Twitter';
+    if (str_contains($type, 'instagram'))                                                 return 'Instagram';
     $name = strtolower($intg['name'] ?? '');
-    if (str_contains($name, 'bluesky') || str_contains($name, 'bsky')) return 'Bluesky';
-    if (str_contains($name, 'mastodon') || str_contains($name, 'masto')) return 'Mastodon';
+    if (str_contains($name, 'bluesky') || str_contains($name, 'bsky'))                  return 'Bluesky';
+    if (str_contains($name, 'mastodon') || str_contains($name, 'masto'))                return 'Mastodon';
     if (str_contains($name, 'twitter') || str_contains($name, ' x') || str_contains($name, 'x ')) return 'X/Twitter';
+    if (str_contains($name, 'instagram') || str_contains($name, 'insta'))               return 'Instagram';
     return 'Social';
 }
 
@@ -965,6 +974,14 @@ renderHeader('Marketing', [
                 <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
               <?php endif; ?>
             </li>
+            <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">Instagram followers</span>
+              <?php if ($glycInstaFollowers !== null): ?>
+                <span class="mk-metric-list__value"><?= h((string)$glycInstaFollowers) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
           </ul>
         </div>
       </div>
@@ -1049,6 +1066,14 @@ renderHeader('Marketing', [
               <span class="mk-metric-list__label">X followers</span>
               <?php if ($ibdXFollowers !== null): ?>
                 <span class="mk-metric-list__value"><?= h((string)$ibdXFollowers) ?></span>
+              <?php else: ?>
+                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
+              <?php endif; ?>
+            </li>
+            <li class="mk-metric-list__item">
+              <span class="mk-metric-list__label">Instagram followers</span>
+              <?php if ($ibdInstaFollowers !== null): ?>
+                <span class="mk-metric-list__value"><?= h((string)$ibdInstaFollowers) ?></span>
               <?php else: ?>
                 <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
               <?php endif; ?>
@@ -1159,12 +1184,14 @@ renderHeader('Marketing', [
         <?php
           // Build row data for the 6 channels
           $channelRows = [
-            ['platform' => 'Bluesky',  'badge' => 'bluesky',  'account' => 'Glyc',         'followers' => $glycBskyFollowers,  'platform_key' => 'glyc_bluesky'],
-            ['platform' => 'Bluesky',  'badge' => 'bluesky',  'account' => 'IBD Movement',  'followers' => $ibdBskyFollowers,   'platform_key' => 'ibd_bluesky'],
-            ['platform' => 'Mastodon', 'badge' => 'mastodon', 'account' => 'Glyc',         'followers' => $glycMastoFollowers, 'platform_key' => 'glyc_mastodon'],
-            ['platform' => 'Mastodon', 'badge' => 'mastodon', 'account' => 'IBD Movement',  'followers' => $ibdMastoFollowers,  'platform_key' => 'ibd_mastodon'],
-            ['platform' => 'X',        'badge' => 'twitter',  'account' => 'Glyc',         'followers' => $glycXFollowers,     'platform_key' => 'glyc_x'],
-            ['platform' => 'X',        'badge' => 'twitter',  'account' => 'IBD Movement',  'followers' => $ibdXFollowers,      'platform_key' => 'ibd_x'],
+            ['platform' => 'Bluesky',   'badge' => 'bluesky',   'account' => 'Glyc',         'followers' => $glycBskyFollowers,   'platform_key' => 'glyc_bluesky'],
+            ['platform' => 'Bluesky',   'badge' => 'bluesky',   'account' => 'IBD Movement',  'followers' => $ibdBskyFollowers,    'platform_key' => 'ibd_bluesky'],
+            ['platform' => 'Mastodon',  'badge' => 'mastodon',  'account' => 'Glyc',         'followers' => $glycMastoFollowers,  'platform_key' => 'glyc_mastodon'],
+            ['platform' => 'Mastodon',  'badge' => 'mastodon',  'account' => 'IBD Movement',  'followers' => $ibdMastoFollowers,   'platform_key' => 'ibd_mastodon'],
+            ['platform' => 'X',         'badge' => 'twitter',   'account' => 'Glyc',         'followers' => $glycXFollowers,      'platform_key' => 'glyc_x'],
+            ['platform' => 'X',         'badge' => 'twitter',   'account' => 'IBD Movement',  'followers' => $ibdXFollowers,       'platform_key' => 'ibd_x'],
+            ['platform' => 'Instagram', 'badge' => 'instagram', 'account' => 'Glyc',         'followers' => $glycInstaFollowers,  'platform_key' => 'glyc_instagram'],
+            ['platform' => 'Instagram', 'badge' => 'instagram', 'account' => 'IBD Movement',  'followers' => $ibdInstaFollowers,   'platform_key' => 'ibd_instagram'],
           ];
         ?>
         <table class="mk-channel-health-table">

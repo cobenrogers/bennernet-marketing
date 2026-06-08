@@ -32,18 +32,20 @@ function mkChannelStatus(?int $errors7d, ?string $lastPublished, bool $postizAva
 function mkPostizByPlatform(array $posts): array
 {
     $idMap = [];
-    if (defined('POSTIZ_ID_GLYC_MASTODON')) $idMap[POSTIZ_ID_GLYC_MASTODON] = 'glyc_mastodon';
-    if (defined('POSTIZ_ID_IBD_MASTODON'))  $idMap[POSTIZ_ID_IBD_MASTODON]  = 'ibd_mastodon';
-    if (defined('POSTIZ_ID_GLYC_BLUESKY'))  $idMap[POSTIZ_ID_GLYC_BLUESKY]  = 'glyc_bluesky';
-    if (defined('POSTIZ_ID_IBD_BLUESKY'))   $idMap[POSTIZ_ID_IBD_BLUESKY]   = 'ibd_bluesky';
-    if (defined('POSTIZ_ID_GLYC_X'))        $idMap[POSTIZ_ID_GLYC_X]        = 'glyc_x';
-    if (defined('POSTIZ_ID_IBD_X'))         $idMap[POSTIZ_ID_IBD_X]         = 'ibd_x';
+    if (defined('POSTIZ_ID_GLYC_MASTODON'))  $idMap[POSTIZ_ID_GLYC_MASTODON]  = 'glyc_mastodon';
+    if (defined('POSTIZ_ID_IBD_MASTODON'))   $idMap[POSTIZ_ID_IBD_MASTODON]   = 'ibd_mastodon';
+    if (defined('POSTIZ_ID_GLYC_BLUESKY'))   $idMap[POSTIZ_ID_GLYC_BLUESKY]   = 'glyc_bluesky';
+    if (defined('POSTIZ_ID_IBD_BLUESKY'))    $idMap[POSTIZ_ID_IBD_BLUESKY]    = 'ibd_bluesky';
+    if (defined('POSTIZ_ID_GLYC_X'))         $idMap[POSTIZ_ID_GLYC_X]         = 'glyc_x';
+    if (defined('POSTIZ_ID_IBD_X'))          $idMap[POSTIZ_ID_IBD_X]          = 'ibd_x';
+    if (defined('POSTIZ_ID_GLYC_INSTAGRAM')) $idMap[POSTIZ_ID_GLYC_INSTAGRAM] = 'glyc_instagram';
+    if (defined('POSTIZ_ID_IBD_INSTAGRAM'))  $idMap[POSTIZ_ID_IBD_INSTAGRAM]  = 'ibd_instagram';
 
     $result = [];
     foreach (array_unique(array_values($idMap)) as $key) {
         $result[$key] = ['queued' => 0, 'published_7d' => 0, 'errors_7d' => 0, 'last_published' => null];
     }
-    foreach (['glyc_mastodon', 'ibd_mastodon', 'glyc_bluesky', 'ibd_bluesky', 'glyc_x', 'ibd_x'] as $key) {
+    foreach (['glyc_mastodon', 'ibd_mastodon', 'glyc_bluesky', 'ibd_bluesky', 'glyc_x', 'ibd_x', 'glyc_instagram', 'ibd_instagram'] as $key) {
         if (!isset($result[$key])) {
             $result[$key] = ['queued' => 0, 'published_7d' => 0, 'errors_7d' => 0, 'last_published' => null];
         }
