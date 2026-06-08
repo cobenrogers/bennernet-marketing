@@ -17,20 +17,24 @@ require_once PORT_ROOT . '/shared/shell.php';
 $user      = requireModuleAccess('marketing', 'viewer');
 $csrfToken = generateCsrfToken();
 
-// ── Postiz configuration ──────────────────────────────────────────────────────
-$postizConfigured = false;
-$postizBaseUrl    = null;
-$postizAuthHeader = null;
+// ── Postiz + bridge configuration ────────────────────────────────────────────
+$postizConfigured  = false;
+$postizBaseUrl     = null;
+$postizAuthHeader  = null;
+$bridgeBaseUrl     = null;
+$bridgeAuthHeader  = null;
 
-if (defined('MK_POSTIZ_URL') && MK_POSTIZ_URL !== '' &&
-    defined('MK_POSTIZ_TOKEN') && MK_POSTIZ_TOKEN !== '') {
+if (defined('MK_BRIDGE_URL') && MK_BRIDGE_URL !== '' &&
+    defined('MK_BRIDGE_TOKEN') && MK_BRIDGE_TOKEN !== '') {
+    $bridgeBaseUrl    = rtrim(MK_BRIDGE_URL, '/');
+    $bridgeAuthHeader = 'Authorization: Bearer ' . MK_BRIDGE_TOKEN;
+    $postizBaseUrl    = $bridgeBaseUrl . '/postiz';
+    $postizAuthHeader = $bridgeAuthHeader;
+    $postizConfigured = true;
+} elseif (defined('MK_POSTIZ_URL') && MK_POSTIZ_URL !== '' &&
+          defined('MK_POSTIZ_TOKEN') && MK_POSTIZ_TOKEN !== '') {
     $postizBaseUrl    = rtrim(MK_POSTIZ_URL, '/');
     $postizAuthHeader = 'Authorization: Bearer ' . MK_POSTIZ_TOKEN;
-    $postizConfigured = true;
-} elseif (defined('MK_BRIDGE_URL') && MK_BRIDGE_URL !== '' &&
-          defined('MK_BRIDGE_TOKEN') && MK_BRIDGE_TOKEN !== '') {
-    $postizBaseUrl    = rtrim(MK_BRIDGE_URL, '/') . '/postiz';
-    $postizAuthHeader = 'Authorization: Bearer ' . MK_BRIDGE_TOKEN;
     $postizConfigured = true;
 }
 
@@ -90,6 +94,29 @@ if ($postizConfigured) {
                     }
                 }
             }
+        }
+    }
+}
+
+// ── Bulk-fetch images from DB via bridge ──────────────────────────────────────
+// The Postiz public API does not return image URLs. Fetch them from the DB
+// in a single batch call to avoid per-post queries.
+$postImages = [];  // [postId => imageUrl]
+if (!$postizError && !empty($posts) && $bridgeBaseUrl !== null) {
+    $postIds    = array_values(array_filter(array_column($posts, 'id')));
+    $imgPayload = json_encode(['action' => 'fetch_images_bulk', 'ids' => $postIds]);
+    $imgCtx     = stream_context_create(['http' => [
+        'method'        => 'POST',
+        'header'        => ($bridgeAuthHeader ?? '') . "\r\nContent-Type: application/json\r\nUser-Agent: bennernet-marketing/1.0",
+        'content'       => $imgPayload,
+        'timeout'       => 8,
+        'ignore_errors' => true,
+    ]]);
+    $imgBody = @file_get_contents($bridgeBaseUrl . '/postiz-db', false, $imgCtx);
+    if ($imgBody) {
+        $imgData = json_decode($imgBody, true);
+        if (is_array($imgData) && ($imgData['ok'] ?? false)) {
+            $postImages = $imgData['images'] ?? [];
         }
     }
 }
@@ -725,25 +752,8 @@ renderHeader('Social Posts — Marketing', [
               $ts   = strtotime($post['publishDate'] ?? $post['createdAt'] ?? '');
               $time = $ts ? date('g:i A', $ts) : '';
 
-              // Image URL — use releaseURL for published posts, or media from API if available
-              $imageUrl = null;
-              if ($state === 'PUBLISHED' && !empty($post['releaseURL'])) {
-                  // releaseURL is the post link, not an image — check for image in post data
-              }
-              // Check for media/image array in post object
-              $mediaArr = $post['image'] ?? $post['media'] ?? $post['images'] ?? null;
-              if (is_array($mediaArr) && isset($mediaArr[0])) {
-                  $firstMedia = $mediaArr[0];
-                  $imageUrl   = is_string($firstMedia)
-                              ? $firstMedia
-                              : ($firstMedia['url'] ?? $firstMedia['path'] ?? null);
-              } elseif (is_string($mediaArr) && $mediaArr !== '') {
-                  // Try to decode if JSON string
-                  $decoded = json_decode($mediaArr, true);
-                  if (is_array($decoded) && isset($decoded[0]['url'])) {
-                      $imageUrl = $decoded[0]['url'];
-                  }
-              }
+              // Image URL — fetched from DB via bridge bulk call (API does not return images)
+              $imageUrl = $postImages[$postId] ?? null;
 
               $releaseUrl = $post['releaseURL'] ?? $post['releaseUrl'] ?? null;
               $isPublished = ($state === 'PUBLISHED');
