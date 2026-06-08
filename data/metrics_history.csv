@@ -377,3 +377,5 @@ date,property,metric,value,unit_window,source
 2026-06-08,ibd,social_masto_followers,5,snapshot,mastodon_api
 2026-06-08,ibd,social_masto_favs_last10,0,last10,mastodon_api
 2026-06-08,ibd,social_masto_boosts_last10,3,last10,mastodon_api
+2026-06-08,glyc,indexed_pages,117,snapshot,browser-automation (gsc-ui)
+2026-06-08,ibd,indexed_pages,105,snapshot,browser-automation (gsc-ui)
