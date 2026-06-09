@@ -677,6 +677,25 @@ $ibdInstaFollowers  = mkHistoryLatest($history, 'ibd',  'social_ig_followers');
 $glycInstaPrior7d   = mkHistoryPrior($history, 'glyc', 'social_ig_followers', 7);
 $ibdInstaPrior7d    = mkHistoryPrior($history, 'ibd',  'social_ig_followers', 7);
 
+// Device split — mobile share of ENGAGED sessions (the real-user signal; raw
+// device users are bot-inflated, esp. Glyc mobile). Collected daily by
+// collect_daily_metrics.py as ga4_device_<dev>_engaged_sessions.
+$mkMobileShare = function (array $h, string $p): ?array {
+    $m = mkHistoryLatest($h, $p, 'ga4_device_mobile_engaged_sessions');
+    $d = mkHistoryLatest($h, $p, 'ga4_device_desktop_engaged_sessions');
+    $t = mkHistoryLatest($h, $p, 'ga4_device_tablet_engaged_sessions');
+    if ($m === null && $d === null && $t === null) {
+        return null;
+    }
+    $total = (int)$m + (int)$d + (int)$t;
+    if ($total <= 0) {
+        return null;
+    }
+    return ['pct' => (int)round(100 * (int)$m / $total), 'mobile' => (int)$m, 'total' => $total];
+};
+$glycMobileShare = $mkMobileShare($history, 'glyc');
+$ibdMobileShare  = $mkMobileShare($history, 'ibd');
+
 // Postiz integration IDs (from running Postiz instance)
 // - cmouj99190001pi8h1f0upfga  = Glyc (Bluesky / bennernet.bsky.social)
 // - cmpbj9osm0008poec8q68tlgo  = IBD Movement (Bluesky / ibdmovement.bsky.social)
@@ -850,6 +869,11 @@ $glycMetrics = [
     $glycInstaPublished !== null
         ? mkMetric('Instagram posts published', $glycInstaPublished, $glycInstaPostsDelta, 'raw', 'neutral')
         : mkMetricStub('Instagram posts published'),
+    $glycMobileShare !== null
+        ? mkMetric('Mobile share (engaged)', $glycMobileShare['pct'] . '%',
+            sprintf('%d of %d engaged sessions', $glycMobileShare['mobile'], $glycMobileShare['total']),
+            'raw', 'neutral')
+        : mkMetricStub('Mobile share (engaged)'),
 ];
 
 // Glyc status: online if we have at least one live source
@@ -936,6 +960,11 @@ $ibdMetrics = [
     $ibdInstaPublished !== null
         ? mkMetric('Instagram posts published', $ibdInstaPublished, $ibdInstaPostsDelta, 'raw', 'neutral')
         : mkMetricStub('Instagram posts published'),
+    $ibdMobileShare !== null
+        ? mkMetric('Mobile share (engaged)', $ibdMobileShare['pct'] . '%',
+            sprintf('%d of %d engaged sessions', $ibdMobileShare['mobile'], $ibdMobileShare['total']),
+            'raw', 'neutral')
+        : mkMetricStub('Mobile share (engaged)'),
 ];
 
 $ibdSourcesOk = ($ibdGscClicks !== null) || ($ibdPublished !== null) || ($mastoIbd !== null) || ($bskyIbd !== null) || ($xIbd !== null);

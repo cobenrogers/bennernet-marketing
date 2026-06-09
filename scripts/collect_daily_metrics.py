@@ -138,6 +138,26 @@ def collect_ga4(prop: str, property_id: str, today: str) -> tuple[list, list]:
     except Exception as e:
         errors.append(f"utm_social: {e}")
 
+    # --- device-category split (mobile vs desktop vs tablet) ---
+    # Capture BOTH raw users and engaged sessions per device: raw users are
+    # bot-inflated (esp. Glyc mobile), so engaged sessions are the real-user
+    # signal for the mobile-vs-desktop audience question.
+    try:
+        r = _ga4(token, property_id,
+                 {"dimensions": [{"name": "deviceCategory"}],
+                  "metrics": [{"name": "totalUsers"}, {"name": "engagedSessions"}],
+                  "dateRanges": dr})
+        for row in r.get("rows", []):
+            dev = row["dimensionValues"][0]["value"].lower()
+            if dev not in ("mobile", "desktop", "tablet"):
+                continue
+            users = int(row["metricValues"][0]["value"])
+            engaged = int(row["metricValues"][1]["value"])
+            rows.append(_row(today, prop, f"ga4_device_{dev}_users", users, "28d"))
+            rows.append(_row(today, prop, f"ga4_device_{dev}_engaged_sessions", engaged, "28d"))
+    except Exception as e:
+        errors.append(f"device_split: {e}")
+
     return rows, errors
 
 
