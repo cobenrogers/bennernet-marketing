@@ -390,3 +390,15 @@ date,property,metric,value,unit_window,source
 2026-06-08,ibd,social_ig_likes_last10,15,last10,instagram_api
 2026-06-08,ibd,social_ig_comments_last10,0,last10,instagram_api
 2026-06-08,ibd,social_ig_reach_last10,45,last10,instagram_api
+2026-06-08,glyc,ga4_device_mobile_users,8006,28d,ga4_api
+2026-06-08,glyc,ga4_device_mobile_engaged_sessions,52,28d,ga4_api
+2026-06-08,glyc,ga4_device_desktop_users,52,28d,ga4_api
+2026-06-08,glyc,ga4_device_desktop_engaged_sessions,56,28d,ga4_api
+2026-06-08,glyc,ga4_device_tablet_users,3,28d,ga4_api
+2026-06-08,glyc,ga4_device_tablet_engaged_sessions,17,28d,ga4_api
+2026-06-08,ibd,ga4_device_desktop_users,423,28d,ga4_api
+2026-06-08,ibd,ga4_device_desktop_engaged_sessions,34,28d,ga4_api
+2026-06-08,ibd,ga4_device_mobile_users,14,28d,ga4_api
+2026-06-08,ibd,ga4_device_mobile_engaged_sessions,3,28d,ga4_api
+2026-06-08,ibd,ga4_device_tablet_users,3,28d,ga4_api
+2026-06-08,ibd,ga4_device_tablet_engaged_sessions,8,28d,ga4_api
