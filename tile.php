@@ -662,7 +662,7 @@ function mkGscTotals(string $siteUrl, int $days = 7, int $endOffset = 1): ?array
  * Called once per (uncached) tile request; ~1-2s, acceptable for 15-min cache.
  */
 function mkDeckData(): ?array {
-    $script = '/home/ben/bennernet-marketing/scripts/compute_deck.py';
+    $script = __DIR__ . '/scripts/compute_deck.py';
     if (!file_exists($script)) {
         return null;
     }
