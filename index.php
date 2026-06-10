@@ -149,7 +149,9 @@ if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children
     }
 }
 
-$campaignData = $tileCache['campaign_data'] ?? null;
+$campaignData   = $tileCache['campaign_data']   ?? null;
+$deckScoreboard = $tileCache['deck_scoreboard'] ?? null;
+$dataFreshness  = $tileCache['data_freshness']  ?? null;
 
 // ── Postiz integration IDs (mirrors tile.php constants) ──────────────────────
 if (!defined('POSTIZ_ID_GLYC_MASTODON'))   define('POSTIZ_ID_GLYC_MASTODON',   'cmouqqkw70001o08gts5rpnyb');
@@ -481,6 +483,62 @@ function mkRelativeTimeTs(int $ts): string
     if ($diff < 86400 * 2) return 'yesterday';
     if ($diff < 86400 * 7) return (int)floor($diff / 86400) . 'd ago';
     return (int)floor($diff / (86400 * 7)) . 'wk ago';
+}
+
+// ── Deck scoreboard display helpers ──────────────────────────────────────────
+
+/** Friendly display label for a deck metric key. */
+function mkDeckLabel(string $metric): string {
+    static $labels = [
+        'ga4_sign_ups'                 => 'Sign-ups',
+        'ga4_debotted_sessions'        => 'Engaged sessions (28d)',
+        'ga4_engaged_sessions'         => 'Engaged sessions',
+        'ga4_returning_users'          => 'Returning users',
+        'utm_social_sessions'          => 'Social sessions',
+        'gsc_clicks'                   => 'GSC clicks',
+        'gsc_impressions'              => 'GSC impressions',
+        'gsc_avg_position'             => 'GSC avg position',
+        'gsc_targetset_avg_position'   => 'Target-set position',
+        'gsc_targetset_ranking_count'  => 'Target queries ranking',
+        'gsc_targetset_page1to3_count' => 'Target queries pg 1–3',
+        'indexed_pages'                => 'Indexed pages',
+        'social_bsky_followers'        => 'Bluesky followers',
+        'social_ig_followers'          => 'Instagram followers',
+        'social_masto_followers'       => 'Mastodon followers',
+        'cadence_recipes_actual'       => 'Recipes published',
+        'cadence_articles_actual'      => 'Articles published',
+        'cadence_social_bsky_actual'   => 'Bluesky posts',
+        'cadence_social_masto_actual'  => 'Mastodon posts',
+        'cadence_social_ig_actual'     => 'Instagram posts',
+    ];
+    return $labels[$metric] ?? ucwords(str_replace('_', ' ', $metric));
+}
+
+/** Format a numeric deck value for display. */
+function mkDeckFmtVal(mixed $v, string $metric): string {
+    if ($v === null) {
+        return '—';
+    }
+    if (str_contains($metric, 'avg_position')) {
+        return number_format((float)$v, 1);
+    }
+    if (is_float($v) && floor($v) != $v) {
+        return number_format((float)$v, 1);
+    }
+    return number_format((int)round((float)$v));
+}
+
+/** Format a WoW pct delta; returns ['text'=>string, 'class'=>string]. */
+function mkDeckFmtDelta(?float $pct, bool $higherIsBetter): array {
+    if ($pct === null) {
+        return ['text' => '—', 'class' => 'mk-scoreboard__delta--neutral'];
+    }
+    $text     = ($pct >= 0 ? '+' : '') . number_format($pct, 1) . '%';
+    $positive = $higherIsBetter ? $pct > 0 : $pct < 0;
+    $negative = $higherIsBetter ? $pct < 0 : $pct > 0;
+    $cls      = $positive ? 'mk-scoreboard__delta--positive'
+              : ($negative ? 'mk-scoreboard__delta--negative' : 'mk-scoreboard__delta--neutral');
+    return ['text' => $text, 'class' => $cls];
 }
 
 // ── Anomaly checks ────────────────────────────────────────────────────────────
@@ -830,6 +888,74 @@ renderHeader('Marketing', [
 .mk-recommendation-list__item { padding: var(--space-1) 0; }
 .mk-recommendation-list__item--static { color: var(--muted, #6b7280); }
 
+/* Deck scoreboard table */
+.mk-scoreboard-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.mk-scoreboard-table th,
+.mk-scoreboard-table td {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+.mk-scoreboard-table th {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-raised);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mk-scoreboard-table tr:last-child td {
+  border-bottom: none;
+}
+.mk-scoreboard-section-header td {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-raised);
+  padding: var(--space-1) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+.mk-scoreboard-row--north-star {
+  background: var(--color-accent-soft);
+}
+.mk-scoreboard-row--north-star td:first-child {
+  font-weight: 700;
+}
+.mk-scoreboard__value {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+.mk-scoreboard__target {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  display: block;
+}
+.mk-scoreboard__delta--positive { color: var(--color-success); font-weight: 600; }
+.mk-scoreboard__delta--negative { color: var(--color-danger, #dc2626); font-weight: 600; }
+.mk-scoreboard__delta--neutral  { color: var(--color-text-secondary); }
+.mk-scoreboard__on-pace  { color: var(--color-success); font-size: var(--text-xs); font-weight: 600; }
+.mk-scoreboard__off-pace { color: var(--color-danger, #dc2626); font-size: var(--text-xs); }
+.mk-scoreboard__cadence--good    { color: var(--color-success); font-weight: 600; }
+.mk-scoreboard__cadence--warning { color: var(--color-warning); font-weight: 600; }
+.mk-scoreboard__cadence--bad     { color: var(--color-danger, #dc2626); font-weight: 600; }
+.mk-scoreboard__exception-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-warning);
+  margin-right: var(--space-1);
+  vertical-align: middle;
+}
+
 /* Upcoming Calendar */
 .mk-calendar-date-divider {
   font-size: var(--text-xs);
@@ -880,297 +1006,197 @@ renderHeader('Marketing', [
     </div>
   </div>
 
-  <!-- ── Today's Digest ───────────────────────────────────────────────────── -->
+  <!-- ── Today's Digest — Deck Scoreboard ─────────────────────────────── -->
   <section aria-labelledby="digest-heading">
     <h2 class="mk-section-heading" id="digest-heading">
       <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#sun"></use></svg>
       Today's Digest
     </h2>
 
-    <!-- Per-site snapshot cards -->
-    <div class="mk-grid--halves">
+    <?php if ($dataFreshness): ?>
+      <p class="mk-page-header__subtitle" style="margin-bottom: var(--space-4);">
+        Last updated: <?= h(date('D M j · g:i A', strtotime($dataFreshness))) ?>
+      </p>
+    <?php endif; ?>
 
-      <!-- getglyc.com -->
-      <div class="mk-card" aria-labelledby="card-glyc-title">
-        <div class="mk-card__header">
-          <h3 class="mk-card__title" id="card-glyc-title">
-            <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#globe"></use></svg>
-            getglyc.com
-          </h3>
-        </div>
-        <div class="mk-card__body">
-          <ul class="mk-metric-list">
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">Posts published</span>
-              <?php if ($glycPostsPublished !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$glycPostsPublished) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">GSC clicks (7d)</span>
-              <?php if ($glycGscClicks !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$glycGscClicks) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">GSC impressions (7d)</span>
-              <?php if ($glycGscImpressions !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$glycGscImpressions) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">GSC CTR (7d)</span>
-              <?php if ($glycGscCtr !== null): ?>
-                <span class="mk-metric-list__value"><?= h(number_format((float)$glycGscCtr * 100, 1) . '%') ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">GSC avg position (7d)</span>
-              <?php if ($glycGscPosition !== null): ?>
-                <span class="mk-metric-list__value"><?= h(number_format((float)$glycGscPosition, 1)) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">GA4 users (7d)</span>
-              <?php if ($glycGa4Users !== null): ?>
-                <span class="mk-metric-list__value"
-                  <?php if ($glycSparkline !== null): ?>data-sparkline="<?= h(implode(',', $glycSparkline)) ?>"<?php endif; ?>
-                ><?= h((string)$glycGa4Users) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">Mastodon followers</span>
-              <?php if ($glycMastoFollowers !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$glycMastoFollowers) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">Bluesky followers</span>
-              <?php if ($glycBskyFollowers !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$glycBskyFollowers) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">X followers</span>
-              <?php if ($glycXFollowers !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$glycXFollowers) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">Instagram followers</span>
-              <?php if ($glycInstaFollowers !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$glycInstaFollowers) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      <!-- ibdmovement.com -->
-      <div class="mk-card" aria-labelledby="card-ibd-title">
-        <div class="mk-card__header">
-          <h3 class="mk-card__title" id="card-ibd-title">
-            <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#globe"></use></svg>
-            ibdmovement.com
-          </h3>
-        </div>
-        <div class="mk-card__body">
-          <ul class="mk-metric-list">
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">Posts published</span>
-              <?php if ($ibdPostsPublished !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$ibdPostsPublished) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">GSC clicks (7d)</span>
-              <?php if ($ibdGscClicks !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$ibdGscClicks) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">GSC impressions (7d)</span>
-              <?php if ($ibdGscImpressions !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$ibdGscImpressions) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">GSC CTR (7d)</span>
-              <?php if ($ibdGscCtr !== null): ?>
-                <span class="mk-metric-list__value"><?= h(number_format((float)$ibdGscCtr * 100, 1) . '%') ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">GSC avg position (7d)</span>
-              <?php if ($ibdGscPosition !== null): ?>
-                <span class="mk-metric-list__value"><?= h(number_format((float)$ibdGscPosition, 1)) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">GA4 users (7d)</span>
-              <?php if ($ibdGa4Users !== null): ?>
-                <span class="mk-metric-list__value"
-                  <?php if ($ibdSparkline !== null): ?>data-sparkline="<?= h(implode(',', $ibdSparkline)) ?>"<?php endif; ?>
-                ><?= h((string)$ibdGa4Users) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">Mastodon followers</span>
-              <?php if ($ibdMastoFollowers !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$ibdMastoFollowers) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">Bluesky followers</span>
-              <?php if ($ibdBskyFollowers !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$ibdBskyFollowers) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">X followers</span>
-              <?php if ($ibdXFollowers !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$ibdXFollowers) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-            <li class="mk-metric-list__item">
-              <span class="mk-metric-list__label">Instagram followers</span>
-              <?php if ($ibdInstaFollowers !== null): ?>
-                <span class="mk-metric-list__value"><?= h((string)$ibdInstaFollowers) ?></span>
-              <?php else: ?>
-                <span class="mk-metric-list__value mk-metric-list__value--stub">&mdash;</span>
-              <?php endif; ?>
-            </li>
-          </ul>
-        </div>
-      </div>
-
-    </div><!-- /.mk-grid--halves -->
-
-    <!-- Postiz status + Anomaly block side by side -->
-    <div class="mk-grid--halves" style="margin-top: 0;">
-
-      <!-- Postiz queue status -->
-      <div class="mk-card" aria-labelledby="card-postiz-title">
-        <div class="mk-card__header">
-          <h3 class="mk-card__title" id="card-postiz-title">
-            <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#calendar-clock"></use></svg>
-            Postiz Queue
-          </h3>
-        </div>
-        <div class="mk-card__body">
-          <?php if (!$postizConfigured): ?>
-            <p class="mk-empty">Postiz not configured.</p>
-          <?php elseif ($postizError): ?>
-            <p class="mk-notice mk-notice--warn">Could not reach Postiz — check bridge connection.</p>
-          <?php elseif ($postizQueueCount !== null): ?>
-            <div class="mk-stat">
-              <span class="mk-stat__value"><?= $postizQueueCount ?></span>
-              <span class="mk-stat__label">post<?= $postizQueueCount !== 1 ? 's' : '' ?> queued</span>
+    <?php if (!$deckScoreboard): ?>
+      <p class="mk-notice mk-notice--info" style="margin-bottom: var(--space-8);">
+        Scoreboard data loading — tile cache will populate within 15 minutes.
+      </p>
+    <?php else: ?>
+      <div class="mk-grid--halves" style="margin-bottom: var(--space-8);">
+        <?php foreach ([['glyc', 'getglyc.com'], ['ibd', 'ibdmovement.com']] as [$propKey, $propLabel]): ?>
+          <?php
+            $propData  = $deckScoreboard[$propKey] ?? null;
+            if ($propData === null) {
+                continue;
+            }
+            $northStar = $propData['north_star'] ?? null;
+            $inputs    = $propData['inputs']     ?? [];
+            $outputs   = $propData['outputs']    ?? [];
+          ?>
+          <div class="mk-card" aria-labelledby="card-sb-<?= h($propKey) ?>-title">
+            <div class="mk-card__header">
+              <h3 class="mk-card__title" id="card-sb-<?= h($propKey) ?>-title">
+                <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#globe"></use></svg>
+                <?= h($propLabel) ?>
+              </h3>
             </div>
-          <?php else: ?>
-            <p class="mk-empty">No queued posts.</p>
-          <?php endif; ?>
-        </div>
+            <div style="overflow-x: auto;">
+              <table class="mk-scoreboard-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Metric</th>
+                    <th scope="col">Value</th>
+                    <th scope="col">vs Target</th>
+                    <th scope="col">WoW Δ</th>
+                    <th scope="col">Cadence</th>
+                  </tr>
+                </thead>
+                <tbody>
+
+                  <?php if ($northStar): ?>
+                    <?php $nsWow = mkDeckFmtDelta($northStar['wow_pct'] ?? null, (bool)($northStar['higher_is_better'] ?? true)); ?>
+                    <tr class="mk-scoreboard-row--north-star">
+                      <td>⭐ <?= h(mkDeckLabel($northStar['metric'])) ?></td>
+                      <td><span class="mk-scoreboard__value"><?= h(mkDeckFmtVal($northStar['value'] ?? null, $northStar['metric'])) ?></span></td>
+                      <td>
+                        <?php if (($northStar['q3_target'] ?? null) !== null): ?>
+                          <?= h(mkDeckFmtVal($northStar['value'] ?? null, $northStar['metric'])) ?> / <?= h(number_format((float)$northStar['q3_target'])) ?>
+                          <?php if (($northStar['pct_of_target'] ?? null) !== null): ?>
+                            <span class="mk-scoreboard__target"><?= h(number_format((float)$northStar['pct_of_target'], 1)) ?>% of target</span>
+                          <?php endif; ?>
+                          <?php if (($northStar['on_pace'] ?? null) !== null): ?>
+                            <span class="<?= $northStar['on_pace'] ? 'mk-scoreboard__on-pace' : 'mk-scoreboard__off-pace' ?>">
+                              <?= $northStar['on_pace'] ? 'on pace' : 'off pace' ?>
+                            </span>
+                          <?php endif; ?>
+                        <?php else: ?>
+                          <span class="mk-scoreboard__delta--neutral">—</span>
+                        <?php endif; ?>
+                      </td>
+                      <td><span class="<?= h($nsWow['class']) ?>"><?= h($nsWow['text']) ?></span></td>
+                      <td>—</td>
+                    </tr>
+                  <?php endif; ?>
+
+                  <?php if (!empty($inputs)): ?>
+                    <tr class="mk-scoreboard-section-header"><td colspan="5">Inputs</td></tr>
+                    <?php foreach ($inputs as $row): ?>
+                      <?php
+                        $wow = mkDeckFmtDelta($row['wow_pct'] ?? null, (bool)($row['higher_is_better'] ?? true));
+                        $ca  = $row['cadence_adherence'] ?? null;
+                        if ($ca !== null) {
+                            $caPct   = (int)round((float)$ca * 100);
+                            $caText  = $caPct . '%';
+                            $caCls   = $caPct >= 90 ? 'mk-scoreboard__cadence--good'
+                                     : ($caPct >= 70 ? 'mk-scoreboard__cadence--warning'
+                                                     : 'mk-scoreboard__cadence--bad');
+                        } else {
+                            $caText = '—';
+                            $caCls  = '';
+                        }
+                      ?>
+                      <tr>
+                        <td>
+                          <?php if (!empty($row['exception'])): ?>
+                            <span class="mk-scoreboard__exception-dot" aria-label="exception"></span>
+                          <?php endif; ?>
+                          <?= h(mkDeckLabel($row['metric'])) ?>
+                        </td>
+                        <td><span class="mk-scoreboard__value"><?= h(mkDeckFmtVal($row['value'] ?? null, $row['metric'])) ?></span></td>
+                        <td>
+                          <?php if (($row['q3_target'] ?? null) !== null): ?>
+                            <?= h(mkDeckFmtVal($row['value'] ?? null, $row['metric'])) ?> / <?= h(number_format((float)$row['q3_target'])) ?>
+                            <?php if (($row['pct_of_target'] ?? null) !== null): ?>
+                              <span class="mk-scoreboard__target"><?= h(number_format((float)$row['pct_of_target'], 1)) ?>% of target</span>
+                            <?php endif; ?>
+                            <?php if (($row['on_pace'] ?? null) !== null): ?>
+                              <span class="<?= $row['on_pace'] ? 'mk-scoreboard__on-pace' : 'mk-scoreboard__off-pace' ?>">
+                                <?= $row['on_pace'] ? 'on pace' : 'off pace' ?>
+                              </span>
+                            <?php endif; ?>
+                          <?php else: ?>
+                            —
+                          <?php endif; ?>
+                        </td>
+                        <td><span class="<?= h($wow['class']) ?>"><?= h($wow['text']) ?></span></td>
+                        <td><?= $caText !== '—' ? '<span class="' . h($caCls) . '">' . h($caText) . '</span>' : '—' ?></td>
+                      </tr>
+                    <?php endforeach; ?>
+                  <?php endif; ?>
+
+                  <?php if (!empty($outputs)): ?>
+                    <tr class="mk-scoreboard-section-header"><td colspan="5">Outputs</td></tr>
+                    <?php foreach ($outputs as $row): ?>
+                      <?php $wow = mkDeckFmtDelta($row['wow_pct'] ?? null, (bool)($row['higher_is_better'] ?? true)); ?>
+                      <tr>
+                        <td>
+                          <?php if (!empty($row['exception'])): ?>
+                            <span class="mk-scoreboard__exception-dot" aria-label="exception"></span>
+                          <?php endif; ?>
+                          <?= h(mkDeckLabel($row['metric'])) ?>
+                        </td>
+                        <td><span class="mk-scoreboard__value"><?= h(mkDeckFmtVal($row['value'] ?? null, $row['metric'])) ?></span></td>
+                        <td>
+                          <?php if (($row['q3_target'] ?? null) !== null): ?>
+                            <?= h(mkDeckFmtVal($row['value'] ?? null, $row['metric'])) ?> / <?= h(number_format((float)$row['q3_target'])) ?>
+                            <?php if (($row['pct_of_target'] ?? null) !== null): ?>
+                              <span class="mk-scoreboard__target"><?= h(number_format((float)$row['pct_of_target'], 1)) ?>% of target</span>
+                            <?php endif; ?>
+                            <?php if (($row['on_pace'] ?? null) !== null): ?>
+                              <span class="<?= $row['on_pace'] ? 'mk-scoreboard__on-pace' : 'mk-scoreboard__off-pace' ?>">
+                                <?= $row['on_pace'] ? 'on pace' : 'off pace' ?>
+                              </span>
+                            <?php endif; ?>
+                          <?php else: ?>
+                            —
+                          <?php endif; ?>
+                        </td>
+                        <td><span class="<?= h($wow['class']) ?>"><?= h($wow['text']) ?></span></td>
+                        <td>—</td>
+                      </tr>
+                    <?php endforeach; ?>
+                  <?php endif; ?>
+
+                </tbody>
+              </table>
+            </div>
+          </div>
+        <?php endforeach; ?>
       </div>
+    <?php endif; ?>
 
-      <!-- Flags + Recommendations stacked in the right column -->
-      <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+  </section>
 
-        <!-- Anomaly / Flags card -->
-        <div class="mk-card" aria-labelledby="card-anomaly-title">
-          <div class="mk-card__header">
-            <h3 class="mk-card__title" id="card-anomaly-title">
-              <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#alert-triangle"></use></svg>
-              Flags
-            </h3>
+  <!-- ── Postiz Queue ──────────────────────────────────────────────────── -->
+  <section aria-labelledby="postiz-queue-heading">
+    <h2 class="mk-section-heading" id="postiz-queue-heading">
+      <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#calendar-clock"></use></svg>
+      Postiz Queue
+    </h2>
+    <div class="mk-card" style="margin-bottom: var(--space-8);">
+      <div class="mk-card__header">
+        <h3 class="mk-card__title" id="card-postiz-title">
+          <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#calendar-clock"></use></svg>
+          Queue Status
+        </h3>
+      </div>
+      <div class="mk-card__body">
+        <?php if (!$postizConfigured): ?>
+          <p class="mk-empty">Postiz not configured.</p>
+        <?php elseif ($postizError): ?>
+          <p class="mk-notice mk-notice--warn">Could not reach Postiz — check bridge connection.</p>
+        <?php elseif ($postizQueueCount !== null): ?>
+          <div class="mk-stat">
+            <span class="mk-stat__value"><?= $postizQueueCount ?></span>
+            <span class="mk-stat__label">post<?= $postizQueueCount !== 1 ? 's' : '' ?> queued</span>
           </div>
-          <div class="mk-card__body">
-            <?php if (empty($activeFlags)): ?>
-              <p class="mk-notice mk-notice--success">All clear — no anomalies detected.</p>
-            <?php else: ?>
-              <ul class="mk-flag-list">
-                <?php foreach ($activeFlags as $flag): ?>
-                  <li class="mk-flag-list__item mk-flag-list__item--<?= h($flag['severity']) ?>">
-                    <?= h($flag['message']) ?>
-                  </li>
-                <?php endforeach; ?>
-              </ul>
-            <?php endif; ?>
-          </div>
-        </div>
-
-        <!-- Recommendations card -->
-        <div class="mk-card" aria-labelledby="card-recommendations-title">
-          <div class="mk-card__header">
-            <h3 class="mk-card__title" id="card-recommendations-title">
-              <svg class="icon" aria-hidden="true"><use href="/port/shared/assets/icons/lucide.svg#lightbulb"></use></svg>
-              Recommendations
-            </h3>
-          </div>
-          <div class="mk-card__body">
-            <ul class="mk-recommendation-list">
-              <?php foreach ($activeFlags as $flag): ?>
-                <?php
-                  // Derive action from flag message
-                  $action = str_contains($flag['message'], 'Postiz ERROR')
-                      ? 'Re-post failed content in Postiz'
-                      : (str_contains($flag['message'], 'GSC clicks down')
-                          ? 'Review GSC drop — check Search Console for indexing issues'
-                          : (str_contains($flag['message'], 'engagement check-in')
-                              ? 'Run engagement-check.py --all --update-log'
-                              : $flag['message']));
-                ?>
-                <li class="mk-recommendation-list__item"><?= h($action) ?></li>
-              <?php endforeach; ?>
-              <li class="mk-recommendation-list__item mk-recommendation-list__item--static">Review Drafts Queue for ready-to-publish content</li>
-              <li class="mk-recommendation-list__item mk-recommendation-list__item--static">Check upcoming calendar for scheduling gaps</li>
-              <li class="mk-recommendation-list__item mk-recommendation-list__item--static">Update engagement log after check-ins</li>
-            </ul>
-          </div>
-        </div>
-
-      </div><!-- /stacked right column -->
-
-    </div><!-- /.mk-grid--halves (postiz + anomaly) -->
-
+        <?php else: ?>
+          <p class="mk-empty">No queued posts.</p>
+        <?php endif; ?>
+      </div>
+    </div>
   </section>
 
   <!-- ── Channel Health ──────────────────────────────────────────────────── -->
