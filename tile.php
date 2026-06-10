@@ -655,13 +655,139 @@ function mkGscTotals(string $siteUrl, int $days = 7, int $endOffset = 1): ?array
     return mkGscParseRow($data);
 }
 
+// ── Deck-backed scoreboard (bm#32) ───────────────────────────────────────────
+
+/**
+ * Run compute_deck.py and return the parsed deck JSON, or null on failure.
+ * Called once per (uncached) tile request; ~1-2s, acceptable for 15-min cache.
+ */
+function mkDeckData(): ?array {
+    $script = '/home/ben/bennernet-marketing/scripts/compute_deck.py';
+    if (!file_exists($script)) {
+        return null;
+    }
+    $out = shell_exec('python3 ' . escapeshellarg($script) . ' 2>/dev/null');
+    if (!$out) {
+        return null;
+    }
+    $data = json_decode($out, true);
+    return is_array($data) ? $data : null;
+}
+
+/**
+ * Convert a deck metric entry into a flat scoreboard row for the Port renderer.
+ */
+function mkDeckRow(array $entry): array {
+    $ca  = $entry['cadence_adherence'] ?? null;
+    $vt  = $entry['vs_target'] ?? [];
+    $row = [
+        'metric'        => $entry['metric'],
+        'value'         => $entry['current']['value'] ?? null,
+        'wow_pct'       => $entry['wow_delta']['pct'] ?? null,
+        'mom_pct'       => $entry['mom_delta']['pct'] ?? null,
+        'on_pace'       => isset($vt['on_pace']) ? (bool)$vt['on_pace'] : null,
+        'pct_of_target' => $vt['pct_of_target'] ?? null,
+        'q3_target'     => $entry['target']['q3'] ?? null,
+        'higher_is_better' => $entry['target']['higher_is_better'] ?? true,
+        'exception'     => (bool)($entry['exception'] ?? false),
+        'north_star'    => (bool)($entry['north_star'] ?? false),
+    ];
+    if ($ca !== null) {
+        $row['cadence_adherence'] = $ca;
+    }
+    return $row;
+}
+
+/**
+ * Build the deck-backed scoreboard:
+ *  inputs first (cadence + reach channels), north-star leads outputs,
+ *  indexed_pages wired from deck target, freshness from deck as_of.
+ *
+ * Returns null when compute_deck.py is unavailable or fails.
+ */
+function mkDeckScoreboard(?array $deck): ?array {
+    if ($deck === null) {
+        return null;
+    }
+
+    $GLYC_INPUTS = [
+        'cadence_recipes_actual', 'cadence_articles_actual',
+        'cadence_social_bsky_actual', 'cadence_social_masto_actual', 'cadence_social_ig_actual',
+        'indexed_pages', 'social_bsky_followers', 'social_ig_followers',
+        'social_masto_followers', 'utm_social_sessions',
+    ];
+    $GLYC_OUTPUTS = [
+        'ga4_sign_ups', 'ga4_debotted_sessions', 'gsc_clicks', 'gsc_impressions',
+        'gsc_targetset_avg_position', 'gsc_targetset_ranking_count', 'gsc_targetset_page1to3_count',
+        'gsc_avg_position',
+    ];
+    $IBD_INPUTS = [
+        'cadence_articles_actual',
+        'cadence_social_bsky_actual', 'cadence_social_masto_actual', 'cadence_social_ig_actual',
+        'indexed_pages', 'social_bsky_followers', 'social_ig_followers',
+        'social_masto_followers', 'utm_social_sessions',
+    ];
+    $IBD_OUTPUTS = [
+        'ga4_debotted_sessions', 'ga4_returning_users', 'gsc_impressions', 'gsc_clicks',
+        'gsc_targetset_avg_position', 'gsc_targetset_ranking_count', 'gsc_targetset_page1to3_count',
+        'gsc_avg_position',
+    ];
+
+    $propOrders = [
+        'glyc' => [$GLYC_INPUTS, $GLYC_OUTPUTS],
+        'ibd'  => [$IBD_INPUTS,  $IBD_OUTPUTS],
+    ];
+
+    $result = ['as_of' => $deck['as_of'] ?? null];
+
+    foreach ($propOrders as $prop => [$inputKeys, $outputKeys]) {
+        $propData = $deck['properties'][$prop] ?? null;
+        if ($propData === null) {
+            continue;
+        }
+
+        $byKey = [];
+        foreach ($propData['metrics'] ?? [] as $entry) {
+            $byKey[$entry['metric']] = $entry;
+        }
+
+        $nsMetric = $propData['north_star_metric'] ?? null;
+        $nsEntry  = ($nsMetric && isset($byKey[$nsMetric])) ? $byKey[$nsMetric] : null;
+
+        $mapRow = function (string $m) use ($byKey): ?array {
+            return isset($byKey[$m]) ? mkDeckRow($byKey[$m]) : null;
+        };
+        $filterRows = function (array $keys) use ($mapRow): array {
+            $out = [];
+            foreach ($keys as $k) {
+                $row = $mapRow($k);
+                if ($row !== null) {
+                    $out[] = $row;
+                }
+            }
+            return $out;
+        };
+
+        $result[$prop] = [
+            'north_star' => $nsEntry ? mkDeckRow($nsEntry) : null,
+            'inputs'     => $filterRows($inputKeys),
+            'outputs'    => $filterRows($outputKeys),
+            'exceptions' => array_map('mkDeckRow', $propData['exceptions'] ?? []),
+        ];
+    }
+
+    return $result;
+}
+
 // ── Fetch all data ────────────────────────────────────────────────────────────
 
 $fetchStart = time();
 
 // ── History store (read once; used for scoreboard + deltas) ──────────────────
-$history    = mkHistoryStore();
-$scoreboard = mkScoreboard($history);
+$history        = mkHistoryStore();
+$scoreboard     = mkScoreboard($history);
+$deckData       = mkDeckData();
+$deckScoreboard = mkDeckScoreboard($deckData);
 
 // Bluesky follower deltas from history (7-day lookback)
 $glycBskyPrior7d = mkHistoryPrior($history, 'glyc', 'social_bsky_followers', 7);
@@ -1003,6 +1129,8 @@ $ibdSparkline14  = $ga4Ibd  !== null ? $ga4Ibd['sparkline']  : array_fill(0, 14,
 // ── Assemble tile ─────────────────────────────────────────────────────────────
 
 $now  = date('c');
+// data_freshness: deck's as_of (stable CSV-backed) takes priority over live-fetch time
+$dataFreshness = isset($deckData['as_of']) ? $deckData['as_of'] : $now;
 $tile = [
     'slug'                   => 'marketing',
     'name'                   => 'Marketing & Analytics',
@@ -1011,7 +1139,7 @@ $tile = [
     'status'                 => $topStatus,
     'period'                 => 'Last 7 days',
     'last_updated'           => $now,
-    'data_freshness'         => $now,
+    'data_freshness'         => $dataFreshness,
     'stale_threshold_minutes' => 2160,
     'metrics'                => $topLevelMetrics,
     'sparkline'              => null,
@@ -1043,6 +1171,7 @@ $tile = [
         ],
     ],
     'scoreboard'     => $scoreboard,
+    'deck_scoreboard' => $deckScoreboard,
     'campaign_data'  => $campaignData,
     // v0 back-compat fields (renderer may still read these during migration)
     'primary_metric' => $bskyTotalPublished !== null
