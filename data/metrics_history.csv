@@ -506,3 +506,10 @@ date,property,metric,value,unit_window,source
 2026-06-07,ibd,cadence_social_bsky_actual,3,weekly,api+retro
 2026-06-07,ibd,cadence_social_masto_actual,3,weekly,api+retro
 2026-06-07,ibd,cadence_social_ig_actual,1,weekly,api+retro
+2026-06-07,glyc,gsc_targetset_avg_position,59.0,weekly,gsc_api
+2026-06-07,glyc,gsc_targetset_ranking_count,1,weekly,gsc_api
+2026-06-07,glyc,gsc_targetset_page1to3_count,0,weekly,gsc_api
+2026-06-07,glyc,gsc_targetset_page1_count,0,weekly,gsc_api
+2026-06-07,ibd,gsc_targetset_ranking_count,0,weekly,gsc_api
+2026-06-07,ibd,gsc_targetset_page1to3_count,0,weekly,gsc_api
+2026-06-07,ibd,gsc_targetset_page1_count,0,weekly,gsc_api

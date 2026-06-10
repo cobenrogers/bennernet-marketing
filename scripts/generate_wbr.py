@@ -35,11 +35,14 @@ GLYC_INPUTS = [
 ]
 
 GLYC_OUTPUTS = [
-    ("ga4_sign_ups",            "Sign-ups (28d) ★"),
-    ("ga4_debotted_sessions",   "De-botted engaged sessions (28d)"),
-    ("gsc_clicks",              "Organic clicks (7d)"),
-    ("gsc_impressions",         "GSC impressions (7d)"),
-    ("gsc_avg_position",        "Avg position"),
+    ("ga4_sign_ups",                "Sign-ups (28d) ★"),
+    ("ga4_debotted_sessions",       "De-botted engaged sessions (28d)"),
+    ("gsc_clicks",                  "Organic clicks (7d)"),
+    ("gsc_impressions",             "GSC impressions (7d)"),
+    ("gsc_targetset_avg_position",  "Target-query avg position"),
+    ("gsc_targetset_ranking_count", "Target queries ranking (of 20)"),
+    ("gsc_targetset_page1to3_count","Target queries on pg 1–3"),
+    ("gsc_avg_position",            "All-query avg position (noise — ref only)"),
 ]
 
 IBD_INPUTS = [
@@ -55,11 +58,14 @@ IBD_INPUTS = [
 ]
 
 IBD_OUTPUTS = [
-    ("ga4_debotted_sessions",   "De-botted engaged sessions (28d) ★"),
-    ("ga4_returning_users",     "Returning users (28d)"),
-    ("gsc_impressions",         "GSC impressions (7d)"),
-    ("gsc_clicks",              "Organic clicks (7d)"),
-    ("gsc_avg_position",        "Avg position"),
+    ("ga4_debotted_sessions",       "De-botted engaged sessions (28d) ★"),
+    ("ga4_returning_users",         "Returning sessions (28d)"),
+    ("gsc_impressions",             "GSC impressions (7d)"),
+    ("gsc_clicks",                  "Organic clicks (7d)"),
+    ("gsc_targetset_avg_position",  "Target-query avg position"),
+    ("gsc_targetset_ranking_count", "Target queries ranking (of 20)"),
+    ("gsc_targetset_page1to3_count","Target queries on pg 1–3"),
+    ("gsc_avg_position",            "All-query avg position (noise — ref only)"),
 ]
 
 

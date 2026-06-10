@@ -42,7 +42,13 @@ OP_TARGETS: dict[tuple[str, str], dict] = {
     # Glyc outputs
     ("glyc", "ga4_sign_ups"):            {"q3": 5,   "q4": 10,   "unit_window": "28d",      "higher_is_better": True},
     ("glyc", "gsc_clicks"):              {"q3": 30,  "q4": 150,  "unit_window": "7d",       "higher_is_better": True},
-    ("glyc", "gsc_avg_position"):        {"q3": 40,  "q4": 20,   "unit_window": "7d",       "higher_is_better": False},
+    # All-query avg position: noise on a low-impression base. Demoted to directional
+    # (no target, exception-suppressed) now that the target-query set is the real signal.
+    ("glyc", "gsc_avg_position"):        {"q3": None,"q4": None, "unit_window": "7d",       "higher_is_better": False},
+    # Target-query set (bm#29 item 4) — the actionable position signal (retires all-query noise)
+    ("glyc", "gsc_targetset_avg_position"):   {"q3": 40, "q4": 20, "unit_window": "weekly", "higher_is_better": False},
+    ("glyc", "gsc_targetset_ranking_count"):  {"q3": None,"q4": None,"unit_window": "weekly", "higher_is_better": True},
+    ("glyc", "gsc_targetset_page1to3_count"): {"q3": 5,   "q4": 10,  "unit_window": "weekly", "higher_is_better": True},
     ("glyc", "ga4_debotted_sessions"):   {"q3": 250, "q4": 500,  "unit_window": "28d",      "higher_is_better": True},
     ("glyc", "utm_social_sessions"):     {"q3": None,"q4": None, "unit_window": "28d",      "higher_is_better": True},
     ("glyc", "gsc_impressions"):         {"q3": None,"q4": None, "unit_window": "7d",       "higher_is_better": True},
@@ -63,6 +69,9 @@ OP_TARGETS: dict[tuple[str, str], dict] = {
     ("ibd",  "gsc_impressions"):         {"q3": None,"q4": None, "unit_window": "7d",       "higher_is_better": True},
     ("ibd",  "gsc_clicks"):              {"q3": None,"q4": None, "unit_window": "7d",       "higher_is_better": True},
     ("ibd",  "gsc_avg_position"):        {"q3": None,"q4": None, "unit_window": "7d",       "higher_is_better": False},
+    ("ibd",  "gsc_targetset_avg_position"):   {"q3": None,"q4": None,"unit_window": "weekly", "higher_is_better": False},
+    ("ibd",  "gsc_targetset_ranking_count"):  {"q3": None,"q4": None,"unit_window": "weekly", "higher_is_better": True},
+    ("ibd",  "gsc_targetset_page1to3_count"): {"q3": None,"q4": None,"unit_window": "weekly", "higher_is_better": True},
     ("ibd",  "utm_social_sessions"):     {"q3": None,"q4": None, "unit_window": "28d",      "higher_is_better": True},
     # IBD cadence inputs
     ("ibd",  "cadence_articles_actual"):      {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},
@@ -116,6 +125,9 @@ OP_METRICS_ORDERED: dict[str, list[str]] = {
         "ga4_debotted_sessions",
         "gsc_clicks",
         "gsc_impressions",
+        "gsc_targetset_avg_position",
+        "gsc_targetset_ranking_count",
+        "gsc_targetset_page1to3_count",
         "gsc_avg_position",
         "utm_social_sessions",
     ],
@@ -134,6 +146,9 @@ OP_METRICS_ORDERED: dict[str, list[str]] = {
         "ga4_returning_users",
         "gsc_impressions",
         "gsc_clicks",
+        "gsc_targetset_avg_position",
+        "gsc_targetset_ranking_count",
+        "gsc_targetset_page1to3_count",
         "gsc_avg_position",
         "utm_social_sessions",
     ],
@@ -142,6 +157,15 @@ OP_METRICS_ORDERED: dict[str, list[str]] = {
 # Exception thresholds
 WOW_EXCEPTION_PCT = 15.0   # ±15% WoW triggers an exception flag
 PACE_EXCEPTION_PCT = 15.0  # >15% behind Q3 pace triggers exception
+
+# Metrics suppressed from exception flagging — known-noisy signals kept in the
+# deck for reference but not worth a root-cause writeup. The all-query avg
+# position is dominated by long-tail noise on a low-impression base; the
+# target-query set (bm#29) is the actionable replacement.
+EXCEPTION_SUPPRESS: set[tuple[str, str]] = {
+    ("glyc", "gsc_avg_position"),
+    ("ibd",  "gsc_avg_position"),
+}
 
 # Cadence plan — loaded once from data/cadence_plan.json
 def _load_cadence_plan() -> dict:
@@ -320,32 +344,14 @@ def compute_metric_entry(
     t6w = trailing_weeks(series, as_of)
     monthly = monthly_series(series, as_of)
 
-    # Exception logic
-    exception = False
-    exception_reasons = []
-
-    if wow_pct is not None:
-        if hib and wow_pct < -WOW_EXCEPTION_PCT:
-            exception = True
-            exception_reasons.append(f"WoW drop {wow_pct:+.1f}%")
-        elif not hib and wow_pct > WOW_EXCEPTION_PCT:
-            exception = True
-            exception_reasons.append(f"WoW increase {wow_pct:+.1f}% (higher=worse)")
-
-    if q3 is not None and cur_val is not None and not vs_target.get("on_pace", True):
-        exception = True
-        pct = vs_target.get("pct_of_target")
-        exception_reasons.append(
-            f"Off Q3 pace ({pct:.0f}% of {q3} target)" if pct is not None else "Off Q3 pace"
-        )
-
     # Cadence adherence: for cadence_*_actual metrics, compute adherence % = actual / planned * 100
     cadence_adherence: Optional[dict] = None
-    if metric.startswith("cadence_") and metric.endswith("_actual"):
+    is_cadence = metric.startswith("cadence_") and metric.endswith("_actual")
+    if is_cadence:
         planned = CADENCE_PLAN.get(prop, {}).get(metric)
         if planned and cur_val is not None:
             adherence_pct = round((cur_val / planned) * 100, 1)
-            is_retro = cur and cur[0] < CADENCE_OP_EFFECTIVE
+            is_retro = bool(cur and cur[0] < CADENCE_OP_EFFECTIVE)
             cadence_adherence = {
                 "planned": planned,
                 "actual": cur_val,
@@ -353,6 +359,38 @@ def compute_metric_entry(
                 "overshoot": max(0.0, adherence_pct - 100.0),
                 "retro": is_retro,
             }
+
+    # Exception logic
+    exception = False
+    exception_reasons = []
+    suppressed = (prop, metric) in EXCEPTION_SUPPRESS
+
+    if is_cadence:
+        # Cadence has its own rule: adherence < 90%, and only for non-retro
+        # (post-OP) weeks — pre-OP weeks aren't a miss against a plan that
+        # didn't exist yet. The raw count is NOT compared to the 90% target.
+        if cadence_adherence and not cadence_adherence["retro"]:
+            if cadence_adherence["adherence_pct"] < 90.0:
+                exception = True
+                exception_reasons.append(
+                    f"Cadence {cadence_adherence['adherence_pct']:.0f}% "
+                    f"({int(cadence_adherence['actual'])}/{cadence_adherence['planned']} vs ≥90% target)"
+                )
+    else:
+        if wow_pct is not None and not suppressed:
+            if hib and wow_pct < -WOW_EXCEPTION_PCT:
+                exception = True
+                exception_reasons.append(f"WoW drop {wow_pct:+.1f}%")
+            elif not hib and wow_pct > WOW_EXCEPTION_PCT:
+                exception = True
+                exception_reasons.append(f"WoW increase {wow_pct:+.1f}% (higher=worse)")
+
+        if q3 is not None and cur_val is not None and not suppressed and not vs_target.get("on_pace", True):
+            exception = True
+            pct = vs_target.get("pct_of_target")
+            exception_reasons.append(
+                f"Off Q3 pace ({pct:.0f}% of {q3} target)" if pct is not None else "Off Q3 pace"
+            )
 
     return {
         "property": prop,

@@ -73,6 +73,36 @@ Output of `scripts/compute_deck.py`. Consumed by WBR generator (bm#30), MBR gene
 }
 ```
 
+### Cadence metrics
+
+For `cadence_*_actual` metrics, the entry carries an extra `cadence_adherence` block:
+
+```json
+"cadence_adherence": {
+  "planned": 5,
+  "actual": 4,
+  "adherence_pct": 80.0,
+  "overshoot": 0.0,
+  "retro": false
+}
+```
+
+- `planned` comes from `data/cadence_plan.json` (OP cadence).
+- `adherence_pct` = actual ÷ planned × 100, capped at 100. `overshoot` holds any excess above 100.
+- `retro: true` for weeks before the OP effective date (2026-06-09) — informational, never flagged as an exception.
+- Cadence exceptions fire on `adherence_pct < 90` for non-retro weeks only (not the generic WoW/pace rule).
+
+### Target-query-set metrics (bm#29 item 4)
+
+The actionable position signal, replacing the noisy all-query average:
+
+- `gsc_targetset_avg_position` — avg GSC position across target queries that are ranking (exact-match against `data/target_queries.json`). `null` when none rank yet.
+- `gsc_targetset_ranking_count` — # of the 20 target queries appearing in GSC at all.
+- `gsc_targetset_page1to3_count` — # at position ≤ 30.
+- `gsc_targetset_page1_count` — # at position ≤ 10 (captured but not in default ordering).
+
+The all-query `gsc_avg_position` is exception-suppressed (kept for reference, labeled noise).
+
 ### Notes
 
 - `wow_delta`: compares current vs nearest point 5–10 days prior. `null` if no prior point in window.
