@@ -177,6 +177,34 @@ def collect_ga4(prop: str, property_id: str, today: str) -> tuple[list, list]:
     except Exception as e:
         errors.append(f"device_split: {e}")
 
+    # --- sign-up funnel events (glyc only — per-surface CTR: impression→click→sign_up) ---
+    # Events: sign_in_prompt_impression/click (save-prompt modal), guest_limit_impression/click
+    # (cap modal), post_result_cta_impression/click (aha-moment inline strip), login_page_view.
+    # Only collected for glyc; IBD has a different funnel shape.
+    if prop == "glyc":
+        _FUNNEL_EVENTS = [
+            "sign_in_prompt_impression", "sign_in_prompt_click",
+            "guest_limit_impression",    "guest_limit_click",
+            "post_result_cta_impression","post_result_cta_click",
+            "login_page_view",
+        ]
+        try:
+            r = _ga4(token, property_id, _q(
+                     {"dimensions": [{"name": "eventName"}],
+                      "metrics": [{"name": "eventCount"}],
+                      "dateRanges": dr,
+                      "dimensionFilter": {"filter": {
+                          "fieldName": "eventName",
+                          "inListFilter": {"values": _FUNNEL_EVENTS}}}}))
+            event_counts = {
+                row["dimensionValues"][0]["value"]: int(row["metricValues"][0]["value"])
+                for row in r.get("rows", [])
+            }
+            for event in _FUNNEL_EVENTS:
+                rows.append(_row(today, prop, event, event_counts.get(event, 0), "28d"))
+        except Exception as e:
+            errors.append(f"signup_funnel_events: {e}")
+
     return rows, errors
 
 
