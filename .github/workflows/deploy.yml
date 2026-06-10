@@ -16,7 +16,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Backup current deployment
         uses: appleboy/ssh-action@v1
@@ -34,7 +34,7 @@ jobs:
             ls -1dt ~/backups/port/marketing/[0-9]*/ 2>/dev/null | tail -n +4 | xargs -r rm -rf
 
       - name: Deploy via rsync
-        uses: burnett01/rsync-deployments@6.0.0
+        uses: burnett01/rsync-deployments@8.0.5
         with:
           switches: -avzr --delete --exclude='.env' --exclude='config.php' --exclude='.git' --exclude='docs/' --exclude='tests/' --exclude='composer.json' --exclude='composer.lock' --exclude='phpunit.xml' --exclude='vendor/'
           path: ./
