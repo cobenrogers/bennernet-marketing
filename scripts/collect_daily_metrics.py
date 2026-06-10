@@ -65,6 +65,25 @@ def collect_ga4(prop: str, property_id: str, today: str) -> tuple[list, list]:
     rows, errors = [], []
     dr = [{"startDate": "28daysAgo", "endDate": "yesterday"}]
 
+    # Glyc: scope all queries to production hostname — excludes CI/localhost hits.
+    # IBD has no equivalent CI pollution so no filter needed there.
+    _hostname_filter = None
+    if prop == "glyc":
+        _hostname_filter = {"filter": {"fieldName": "hostName",
+                                       "stringFilter": {"matchType": "EXACT",
+                                                        "value": "getglyc.com"}}}
+
+    def _q(body: dict) -> dict:
+        """Merge hostname filter (if any) with the query body."""
+        if _hostname_filter is None:
+            return body
+        existing = body.get("dimensionFilter")
+        if existing:
+            body["dimensionFilter"] = {"andGroup": {"expressions": [existing, _hostname_filter]}}
+        else:
+            body["dimensionFilter"] = _hostname_filter
+        return body
+
     try:
         token = _get_ga4_token()
     except Exception as e:
@@ -72,9 +91,9 @@ def collect_ga4(prop: str, property_id: str, today: str) -> tuple[list, list]:
 
     # --- summary: totalUsers, engagedSessions ---
     try:
-        r = _ga4(token, property_id,
+        r = _ga4(token, property_id, _q(
                  {"metrics": [{"name": "totalUsers"}, {"name": "engagedSessions"}],
-                  "dateRanges": dr})
+                  "dateRanges": dr}))
         vals = r.get("rows", [{}])[0].get("metricValues", [])
         if vals:
             rows.append(_row(today, prop, "ga4_total_users", vals[0]["value"], "28d"))
@@ -84,10 +103,10 @@ def collect_ga4(prop: str, property_id: str, today: str) -> tuple[list, list]:
 
     # --- channel breakdown: debotted sessions (non-Direct) ---
     try:
-        r = _ga4(token, property_id,
+        r = _ga4(token, property_id, _q(
                  {"dimensions": [{"name": "sessionDefaultChannelGroup"}],
                   "metrics": [{"name": "sessions"}],
-                  "dateRanges": dr})
+                  "dateRanges": dr}))
         debotted = sum(int(row["metricValues"][0]["value"])
                        for row in r.get("rows", [])
                        if row["dimensionValues"][0]["value"].lower() != "direct")
@@ -97,12 +116,12 @@ def collect_ga4(prop: str, property_id: str, today: str) -> tuple[list, list]:
 
     # --- sign_up events ---
     try:
-        r = _ga4(token, property_id,
+        r = _ga4(token, property_id, _q(
                  {"dimensions": [{"name": "eventName"}],
                   "metrics": [{"name": "eventCount"}],
                   "dateRanges": dr,
                   "dimensionFilter": {"filter": {"fieldName": "eventName",
-                                                  "stringFilter": {"value": "sign_up"}}}})
+                                                  "stringFilter": {"value": "sign_up"}}}}))
         signups = sum(int(row["metricValues"][0]["value"]) for row in r.get("rows", []))
         rows.append(_row(today, prop, "ga4_sign_ups", signups, "28d"))
     except Exception as e:
@@ -110,10 +129,10 @@ def collect_ga4(prop: str, property_id: str, today: str) -> tuple[list, list]:
 
     # --- returning users (community depth, esp. IBD) ---
     try:
-        r = _ga4(token, property_id,
+        r = _ga4(token, property_id, _q(
                  {"dimensions": [{"name": "newVsReturning"}],
                   "metrics": [{"name": "sessions"}],
-                  "dateRanges": dr})
+                  "dateRanges": dr}))
         returning = 0
         for row in r.get("rows", []):
             if row["dimensionValues"][0]["value"].lower() == "returning":
@@ -124,10 +143,10 @@ def collect_ga4(prop: str, property_id: str, today: str) -> tuple[list, list]:
 
     # --- UTM social sessions (Bluesky / Mastodon / X only) ---
     try:
-        r = _ga4(token, property_id,
+        r = _ga4(token, property_id, _q(
                  {"dimensions": [{"name": "sessionMedium"}, {"name": "sessionSource"}],
                   "metrics": [{"name": "sessions"}],
-                  "dateRanges": dr})
+                  "dateRanges": dr}))
         utm_social = 0
         for row in r.get("rows", []):
             src = row["dimensionValues"][1]["value"].lower()
@@ -143,10 +162,10 @@ def collect_ga4(prop: str, property_id: str, today: str) -> tuple[list, list]:
     # bot-inflated (esp. Glyc mobile), so engaged sessions are the real-user
     # signal for the mobile-vs-desktop audience question.
     try:
-        r = _ga4(token, property_id,
+        r = _ga4(token, property_id, _q(
                  {"dimensions": [{"name": "deviceCategory"}],
                   "metrics": [{"name": "totalUsers"}, {"name": "engagedSessions"}],
-                  "dateRanges": dr})
+                  "dateRanges": dr}))
         for row in r.get("rows", []):
             dev = row["dimensionValues"][0]["value"].lower()
             if dev not in ("mobile", "desktop", "tablet"):

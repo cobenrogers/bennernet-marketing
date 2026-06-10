@@ -297,7 +297,7 @@ function mkGoogleSaToken(string $credPath, string $scope): ?string {
  * Returns ['users' => int, 'sparkline' => int[14]] or null when credentials
  * are not configured or the API call fails.
  */
-function mkGa4Users(string $propertyId): ?array {
+function mkGa4Users(string $propertyId, string $hostname = ''): ?array {
     $credPath = defined('MK_GA4_CREDENTIALS_PATH') ? MK_GA4_CREDENTIALS_PATH : null;
     if (!$credPath || !file_exists($credPath) || $propertyId === '') {
         return null;
@@ -308,13 +308,18 @@ function mkGa4Users(string $propertyId): ?array {
         return null;
     }
 
-    $url  = "https://analyticsdata.googleapis.com/v1beta/properties/{$propertyId}:runReport";
-    $body = json_encode([
+    $url     = "https://analyticsdata.googleapis.com/v1beta/properties/{$propertyId}:runReport";
+    $payload = [
         'dateRanges' => [['startDate' => '13daysAgo', 'endDate' => 'today']],
         'dimensions' => [['name' => 'date']],
         'metrics'    => [['name' => 'totalUsers']],
         'orderBys'   => [['dimension' => ['dimensionName' => 'date']]],
-    ]);
+    ];
+    if ($hostname !== '') {
+        $payload['dimensionFilter'] = ['filter' => ['fieldName' => 'hostName',
+            'stringFilter' => ['matchType' => 'EXACT', 'value' => $hostname]]];
+    }
+    $body = json_encode($payload);
     $ctx  = stream_context_create(['http' => [
         'method'        => 'POST',
         'header'        => "Authorization: Bearer {$token}\r\nContent-Type: application/json\r\n",
@@ -373,12 +378,12 @@ function mkGa4CampaignData(): ?array {
 
     $url  = "https://analyticsdata.googleapis.com/v1beta/properties/{$propertyId}:runReport";
     $body = json_encode([
-        'dateRanges'       => [['startDate' => '29daysAgo', 'endDate' => 'today']],
-        'dimensions'       => [['name' => 'sessionSource'], ['name' => 'sessionMedium']],
-        'metrics'          => [['name' => 'sessions'], ['name' => 'keyEvents']],
-        'dimensionFilter'  => null,
-        'metricFilter'     => null,
-        'orderBys'         => [['metric' => ['metricName' => 'sessions'], 'desc' => true]],
+        'dateRanges'      => [['startDate' => '29daysAgo', 'endDate' => 'today']],
+        'dimensions'      => [['name' => 'sessionSource'], ['name' => 'sessionMedium']],
+        'metrics'         => [['name' => 'sessions'], ['name' => 'keyEvents']],
+        'dimensionFilter' => ['filter' => ['fieldName' => 'hostName',
+            'stringFilter' => ['matchType' => 'EXACT', 'value' => 'getglyc.com']]],
+        'orderBys'        => [['metric' => ['metricName' => 'sessions'], 'desc' => true]],
     ]);
     $ctx  = stream_context_create(['http' => [
         'method'        => 'POST',
@@ -857,7 +862,7 @@ $gscGlyc      = mkGscTotals('sc-domain:getglyc.com',    7);
 $gscIbd       = mkGscTotals('sc-domain:ibdmovement.com', 7);
 $gscGlycPrior = mkGscTotals('sc-domain:getglyc.com',    7, 8);
 $gscIbdPrior  = mkGscTotals('sc-domain:ibdmovement.com', 7, 8);
-$ga4Glyc      = mkGa4Users(defined('MK_GA4_PROPERTY_GLYC') ? MK_GA4_PROPERTY_GLYC : '');
+$ga4Glyc      = mkGa4Users(defined('MK_GA4_PROPERTY_GLYC') ? MK_GA4_PROPERTY_GLYC : '', 'getglyc.com');
 $ga4Ibd       = mkGa4Users(defined('MK_GA4_PROPERTY_IBD')  ? MK_GA4_PROPERTY_IBD  : '');
 $campaignData = mkGa4CampaignData();
 $mastoGlyc    = mkMastodonFollowers(

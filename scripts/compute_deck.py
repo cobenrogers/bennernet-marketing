@@ -49,6 +49,10 @@ OP_TARGETS: dict[tuple[str, str], dict] = {
     ("glyc", "gsc_targetset_avg_position"):   {"q3": 40, "q4": 20, "unit_window": "weekly", "higher_is_better": False},
     ("glyc", "gsc_targetset_ranking_count"):  {"q3": None,"q4": None,"unit_window": "weekly", "higher_is_better": True},
     ("glyc", "gsc_targetset_page1to3_count"): {"q3": 5,   "q4": 10,  "unit_window": "weekly", "higher_is_better": True},
+    # ga4_total_users for glyc was CI-inflated (9k+/28d) prior to 2026-06-10 fix (glyc#239/PR#240).
+    # Real getglyc.com baseline: ~7 sessions/day (~196/28d total). debotted_sessions (non-Direct)
+    # was relatively clean even before the fix (~100/28d) since CI bots route as Direct.
+    # Q3 target of 250 stands — it represents 2.5× growth from the real ~100 baseline.
     ("glyc", "ga4_debotted_sessions"):   {"q3": 250, "q4": 500,  "unit_window": "28d",      "higher_is_better": True},
     ("glyc", "utm_social_sessions"):     {"q3": None,"q4": None, "unit_window": "28d",      "higher_is_better": True},
     ("glyc", "gsc_impressions"):         {"q3": None,"q4": None, "unit_window": "7d",       "higher_is_better": True},
