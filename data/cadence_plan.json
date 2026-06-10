@@ -1,0 +1,19 @@
+{
+  "_comment": "Planned cadence per property per week from Marketing OP FY2026 (adopted 2026-06-09). Counts per ISO week. Pre-OP weeks (before 2026-06-09) are retro/informational actuals — adherence vs. this plan is only meaningful from week_ending 2026-06-15 onward.",
+  "_op_effective_date": "2026-06-09",
+  "glyc": {
+    "cadence_recipes_actual":       5,
+    "cadence_articles_actual":      2,
+    "cadence_social_bsky_actual":   5,
+    "cadence_social_masto_actual":  5,
+    "cadence_social_ig_actual":     3,
+    "cadence_community_actual":     3
+  },
+  "ibd": {
+    "cadence_articles_actual":      2,
+    "cadence_social_bsky_actual":   4,
+    "cadence_social_masto_actual":  4,
+    "cadence_social_ig_actual":     3,
+    "cadence_community_actual":     2
+  }
+}

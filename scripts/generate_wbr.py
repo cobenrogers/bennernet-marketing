@@ -22,11 +22,16 @@ WBR_DOC_ID = "11wtSWFnbSMnn-A8SkTfDuHwGgjKFejIsGPzG_upMM_A"
 
 # Metric display names + row ordering for WBR tables
 GLYC_INPUTS = [
-    ("indexed_pages",           "Indexed pages"),
-    ("social_bsky_followers",   "Bluesky followers"),
-    ("social_ig_followers",     "Instagram followers"),
-    ("social_masto_followers",  "Mastodon followers"),
-    ("utm_social_sessions",     "UTM social sessions (28d)"),
+    ("cadence_recipes_actual",      "Recipes cadence (actual/planned)"),
+    ("cadence_articles_actual",     "Articles cadence (actual/planned)"),
+    ("cadence_social_bsky_actual",  "Bluesky cadence (actual/planned)"),
+    ("cadence_social_masto_actual", "Mastodon cadence (actual/planned)"),
+    ("cadence_social_ig_actual",    "Instagram cadence (actual/planned)"),
+    ("indexed_pages",               "Indexed pages"),
+    ("social_bsky_followers",       "Bluesky followers"),
+    ("social_ig_followers",         "Instagram followers"),
+    ("social_masto_followers",      "Mastodon followers"),
+    ("utm_social_sessions",         "UTM social sessions (28d)"),
 ]
 
 GLYC_OUTPUTS = [
@@ -38,11 +43,15 @@ GLYC_OUTPUTS = [
 ]
 
 IBD_INPUTS = [
-    ("indexed_pages",           "Indexed pages"),
-    ("social_bsky_followers",   "Bluesky followers"),
-    ("social_ig_followers",     "Instagram followers"),
-    ("social_masto_followers",  "Mastodon followers"),
-    ("utm_social_sessions",     "UTM social sessions (28d)"),
+    ("cadence_articles_actual",     "Articles cadence (actual/planned)"),
+    ("cadence_social_bsky_actual",  "Bluesky cadence (actual/planned)"),
+    ("cadence_social_masto_actual", "Mastodon cadence (actual/planned)"),
+    ("cadence_social_ig_actual",    "Instagram cadence (actual/planned)"),
+    ("indexed_pages",               "Indexed pages"),
+    ("social_bsky_followers",       "Bluesky followers"),
+    ("social_ig_followers",         "Instagram followers"),
+    ("social_masto_followers",      "Mastodon followers"),
+    ("utm_social_sessions",         "UTM social sessions (28d)"),
 ]
 
 IBD_OUTPUTS = [
@@ -66,6 +75,36 @@ def fmt_val(v: Optional[float], metric: str) -> str:
     if isinstance(v, float) and v == int(v):
         return str(int(v))
     return str(round(v, 1))
+
+
+def fmt_cadence(entry: dict) -> tuple[str, str, str]:
+    """Return (this_wk, wow, vs_pace) for a cadence metric entry."""
+    ca = entry.get("cadence_adherence")
+    if not ca:
+        return "_pending_", "—", "_pending_"
+
+    actual = int(ca["actual"]) if ca["actual"] == int(ca["actual"]) else ca["actual"]
+    planned = ca["planned"]
+    pct = ca["adherence_pct"]
+    retro = ca.get("retro", False)
+    retro_tag = " _(retro)_" if retro else ""
+
+    this_wk = f"{actual}/{planned} ({pct:.0f}%){retro_tag}"
+
+    # WoW for cadence: show raw wow_delta on the actual count
+    d = entry.get("wow_delta", {})
+    wow_abs = d.get("abs")
+    if wow_abs is None:
+        wow = "—"
+    else:
+        sign = "+" if wow_abs >= 0 else ""
+        wow = f"{sign}{int(wow_abs) if wow_abs == int(wow_abs) else round(wow_abs, 1)}"
+
+    # vs pace: target is ≥90% adherence
+    pace_icon = "✅" if pct >= 90 else "⚠️"
+    vs_pace = f"{pace_icon} target ≥90%"
+
+    return this_wk, wow, vs_pace
 
 
 def fmt_wow(entry: dict) -> str:
@@ -128,9 +167,12 @@ def render_table(prop_data: dict, rows: list[tuple[str, str]]) -> str:
         if entry is None:
             lines.append(f"| {label} | _pending_ | — | — |")
             continue
-        cur = fmt_val(entry["current"]["value"], metric_key)
-        wow = fmt_wow(entry)
-        pace = fmt_pace(entry)
+        if metric_key.startswith("cadence_"):
+            cur, wow, pace = fmt_cadence(entry)
+        else:
+            cur = fmt_val(entry["current"]["value"], metric_key)
+            wow = fmt_wow(entry)
+            pace = fmt_pace(entry)
         lines.append(f"| {label} | {cur} | {wow} | {pace} |")
     return "\n".join(lines)
 
@@ -189,7 +231,7 @@ _Living document — refreshed every Tuesday before review. Operational pulse; ~
 
 {render_table(glyc, GLYC_INPUTS)}
 
-_Cadence adherence (planned vs actual publish/post per channel) pending — instrumentation bm#29._
+_Cadence rows marked (retro) are pre-OP (before 2026-06-09) — informational only; adherence targets apply from week of Jun 9 forward._
 
 ### Outputs (lagging — track, don't obsess)
 
@@ -209,7 +251,7 @@ _Cadence adherence (planned vs actual publish/post per channel) pending — inst
 
 {render_table(ibd, IBD_INPUTS)}
 
-_Cadence adherence pending — instrumentation bm#29._
+_Cadence rows marked (retro) are pre-OP (before 2026-06-09) — informational only; adherence targets apply from week of Jun 9 forward._
 
 ### Outputs
 
@@ -260,7 +302,7 @@ _Format: what happened · root cause hypothesis · recommendation. {exception_co
 | Glyc: recipes 5 · articles 2 · BSky 5 · Masto 5 · IG 3 | — | _pending_ | — |
 | IBD: articles 2 · BSky 4 · Masto 4 · IG 3 | — | _pending_ | — |
 
-_Blocked: cadence instrumentation (bm#29) lands June. Keystone input KPI — until live, the WBR can't answer "did we do what we said?"_
+_Community answers tracked manually (use `append_metrics.py --metric cadence_community_actual`). Retro weeks pre-2026-06-09 are informational._
 
 ---
 """)

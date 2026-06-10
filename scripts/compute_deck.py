@@ -24,6 +24,7 @@ from datetime import date, timedelta
 from typing import Optional
 
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "metrics_history.csv")
+CADENCE_PLAN_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "cadence_plan.json")
 
 # ---------------------------------------------------------------------------
 # OP targets — sourced from wiki/projects/marketing-operating-plan.md
@@ -45,6 +46,12 @@ OP_TARGETS: dict[tuple[str, str], dict] = {
     ("glyc", "ga4_debotted_sessions"):   {"q3": 250, "q4": 500,  "unit_window": "28d",      "higher_is_better": True},
     ("glyc", "utm_social_sessions"):     {"q3": None,"q4": None, "unit_window": "28d",      "higher_is_better": True},
     ("glyc", "gsc_impressions"):         {"q3": None,"q4": None, "unit_window": "7d",       "higher_is_better": True},
+    # Glyc cadence inputs (planned = cadence_plan.json; adherence computed at runtime)
+    ("glyc", "cadence_recipes_actual"):       {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},  # ≥90% adherence
+    ("glyc", "cadence_articles_actual"):      {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},
+    ("glyc", "cadence_social_bsky_actual"):   {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},
+    ("glyc", "cadence_social_masto_actual"):  {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},
+    ("glyc", "cadence_social_ig_actual"):     {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},
     # IBD inputs
     ("ibd",  "indexed_pages"):           {"q3": 130, "q4": 160,  "unit_window": "snapshot", "higher_is_better": True},
     ("ibd",  "social_bsky_followers"):   {"q3": 120, "q4": 200,  "unit_window": "snapshot", "higher_is_better": True},
@@ -57,6 +64,11 @@ OP_TARGETS: dict[tuple[str, str], dict] = {
     ("ibd",  "gsc_clicks"):              {"q3": None,"q4": None, "unit_window": "7d",       "higher_is_better": True},
     ("ibd",  "gsc_avg_position"):        {"q3": None,"q4": None, "unit_window": "7d",       "higher_is_better": False},
     ("ibd",  "utm_social_sessions"):     {"q3": None,"q4": None, "unit_window": "28d",      "higher_is_better": True},
+    # IBD cadence inputs
+    ("ibd",  "cadence_articles_actual"):      {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},
+    ("ibd",  "cadence_social_bsky_actual"):   {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},
+    ("ibd",  "cadence_social_masto_actual"):  {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},
+    ("ibd",  "cadence_social_ig_actual"):     {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},
 }
 
 # OP classification: which metrics are controllable inputs (80% of WBR attention)
@@ -65,11 +77,19 @@ OP_INPUTS: set[tuple[str, str]] = {
     ("glyc", "social_bsky_followers"),
     ("glyc", "social_ig_followers"),
     ("glyc", "social_masto_followers"),
+    ("glyc", "cadence_recipes_actual"),
+    ("glyc", "cadence_articles_actual"),
+    ("glyc", "cadence_social_bsky_actual"),
+    ("glyc", "cadence_social_masto_actual"),
+    ("glyc", "cadence_social_ig_actual"),
     ("ibd",  "indexed_pages"),
     ("ibd",  "social_bsky_followers"),
     ("ibd",  "social_ig_followers"),
     ("ibd",  "social_masto_followers"),
-    # cadence metrics will be added when bm#29 instruments them
+    ("ibd",  "cadence_articles_actual"),
+    ("ibd",  "cadence_social_bsky_actual"),
+    ("ibd",  "cadence_social_masto_actual"),
+    ("ibd",  "cadence_social_ig_actual"),
 }
 
 # North-star metrics per property
@@ -86,6 +106,11 @@ OP_METRICS_ORDERED: dict[str, list[str]] = {
         "social_bsky_followers",
         "social_ig_followers",
         "social_masto_followers",
+        "cadence_recipes_actual",
+        "cadence_articles_actual",
+        "cadence_social_bsky_actual",
+        "cadence_social_masto_actual",
+        "cadence_social_ig_actual",
         # outputs
         "ga4_sign_ups",
         "ga4_debotted_sessions",
@@ -100,6 +125,10 @@ OP_METRICS_ORDERED: dict[str, list[str]] = {
         "social_bsky_followers",
         "social_ig_followers",
         "social_masto_followers",
+        "cadence_articles_actual",
+        "cadence_social_bsky_actual",
+        "cadence_social_masto_actual",
+        "cadence_social_ig_actual",
         # outputs
         "ga4_debotted_sessions",
         "ga4_returning_users",
@@ -113,6 +142,19 @@ OP_METRICS_ORDERED: dict[str, list[str]] = {
 # Exception thresholds
 WOW_EXCEPTION_PCT = 15.0   # ±15% WoW triggers an exception flag
 PACE_EXCEPTION_PCT = 15.0  # >15% behind Q3 pace triggers exception
+
+# Cadence plan — loaded once from data/cadence_plan.json
+def _load_cadence_plan() -> dict:
+    try:
+        with open(CADENCE_PLAN_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+CADENCE_PLAN = _load_cadence_plan()
+
+# OP effective date — cadence adherence only meaningful from this date forward
+CADENCE_OP_EFFECTIVE = date(2026, 6, 9)
 
 
 # ---------------------------------------------------------------------------
@@ -297,11 +339,27 @@ def compute_metric_entry(
             f"Off Q3 pace ({pct:.0f}% of {q3} target)" if pct is not None else "Off Q3 pace"
         )
 
+    # Cadence adherence: for cadence_*_actual metrics, compute adherence % = actual / planned * 100
+    cadence_adherence: Optional[dict] = None
+    if metric.startswith("cadence_") and metric.endswith("_actual"):
+        planned = CADENCE_PLAN.get(prop, {}).get(metric)
+        if planned and cur_val is not None:
+            adherence_pct = round((cur_val / planned) * 100, 1)
+            is_retro = cur and cur[0] < CADENCE_OP_EFFECTIVE
+            cadence_adherence = {
+                "planned": planned,
+                "actual": cur_val,
+                "adherence_pct": min(adherence_pct, 100.0),  # cap at 100%
+                "overshoot": max(0.0, adherence_pct - 100.0),
+                "retro": is_retro,
+            }
+
     return {
         "property": prop,
         "metric": metric,
         "category": "input" if (prop, metric) in OP_INPUTS else "output",
         "north_star": NORTH_STARS.get(prop) == metric,
+        "cadence_adherence": cadence_adherence,
         "current": {
             "value": cur_val,
             "unit_window": cur_window,
