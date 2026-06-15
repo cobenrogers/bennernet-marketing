@@ -848,3 +848,5 @@ date,property,metric,value,unit_window,source
 2026-06-15,ibd,social_ig_likes_last10,36,last10,instagram_api
 2026-06-15,ibd,social_ig_comments_last10,0,last10,instagram_api
 2026-06-15,ibd,social_ig_reach_last10,140,last10,instagram_api
+2026-06-15,glyc,indexed_pages,209,snapshot,browser-automation (gsc-ui)
+2026-06-15,ibd,indexed_pages,91,snapshot,browser-automation (gsc-ui)
