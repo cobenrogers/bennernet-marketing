@@ -26,6 +26,7 @@ GLYC_INPUTS = [
     ("cadence_social_bsky_actual",  "Bluesky cadence (latest wk)"),
     ("cadence_social_masto_actual", "Mastodon cadence (latest wk)"),
     ("cadence_social_ig_actual",    "Instagram cadence (latest wk)"),
+    ("cadence_social_x_actual",     "X.com cadence (latest wk)"),
     ("indexed_pages",               "Indexed pages"),
     ("social_bsky_followers",       "Bluesky followers"),
     ("social_ig_followers",         "Instagram followers"),
@@ -49,6 +50,7 @@ IBD_INPUTS = [
     ("cadence_social_bsky_actual",  "Bluesky cadence (latest wk)"),
     ("cadence_social_masto_actual", "Mastodon cadence (latest wk)"),
     ("cadence_social_ig_actual",    "Instagram cadence (latest wk)"),
+    ("cadence_social_x_actual",     "X.com cadence (latest wk)"),
     ("indexed_pages",               "Indexed pages"),
     ("social_bsky_followers",       "Bluesky followers"),
     ("social_ig_followers",         "Instagram followers"),
@@ -256,6 +258,22 @@ _Living document — refreshed monthly. Monthly pulse; MoM trajectory on every m
     sections.append(f"""\
 ## Glyc — getglyc.com · north star: sign-ups ({glyc_ns_str} this period)
 
+### Business Update
+
+_What the numbers mean for the business — not just what happened, but the so-what. Written by Pop-Mark from deck data._
+
+{{{{GLYC_BUSINESS_NARRATIVE}}}}
+
+### Highlights & Lowlights
+
+**Highlights** _(what's working and why it matters)_
+
+{{{{GLYC_HIGHLIGHTS}}}}
+
+**Lowlights** _(what's not working and what it costs us)_
+
+{{{{GLYC_LOWLIGHTS}}}}
+
 ### Inputs (controllable — where the work is)
 
 {render_table(glyc, GLYC_INPUTS)}
@@ -275,6 +293,22 @@ _Cadence shows latest weekly actuals/adherence. Pre-OP weeks (before 2026-06-09)
 
     sections.append(f"""\
 ## IBD Movement — ibdmovement.com · north star: de-botted engaged sessions ({ibd_ns_str} this period)
+
+### Business Update
+
+_What the numbers mean for the business — not just what happened, but the so-what. Written by Pop-Mark from deck data._
+
+{{{{IBD_BUSINESS_NARRATIVE}}}}
+
+### Highlights & Lowlights
+
+**Highlights** _(what's working and why it matters)_
+
+{{{{IBD_HIGHLIGHTS}}}}
+
+**Lowlights** _(what's not working and what it costs us)_
+
+{{{{IBD_LOWLIGHTS}}}}
 
 ### Inputs (controllable)
 
@@ -329,6 +363,36 @@ _Format: what happened · root cause hypothesis · recommendation. {exception_co
 _2-3 bullets: what worked this month, what didn't, one recommended focus for next month. Written by Pop-Mark from deck data only._
 
 {{MONTHLY_SUMMARY}}
+
+---
+""")
+
+    # ── Risks & Challenges ───────────────────────────────────────────────────
+    sections.append("""\
+## Risks & Challenges
+
+_Known obstacles, potential risks, and areas where the team needs cross-functional help. Updated monthly by Pop-Mark._
+
+| # | Risk / Challenge | Domain | Likelihood | Impact | Mitigation / Ask |
+|---|---|---|---|---|---|
+| {{RISK_ROWS}} | | | | | |
+
+{{RISKS_NARRATIVE}}
+
+---
+""")
+
+    # ── Action Items & Follow-ups ────────────────────────────────────────────
+    sections.append("""\
+## Action Items & Follow-ups
+
+_Running log maintained from previous MBRs. Every action has an owner, metric it affects, and a due date._
+
+| # | Action | Owner | Metric affected | Due | Status |
+|---|---|---|---|---|---|
+| {{ACTION_ROWS}} | | | | | |
+
+_Add new actions at the bottom. Close completed rows by updating Status to ✅ Done._
 
 ---
 """)
