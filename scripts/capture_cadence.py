@@ -40,11 +40,11 @@ USER_AGENT = "pop-mark-cadence-collector/1.0"
 POSTIZ_INTEGRATIONS: dict[str, tuple[str, str]] = {
     "cmouj99190001pi8h1f0upfga": ("glyc", "bsky"),
     "cmouqqkw70001o08gts5rpnyb": ("glyc", "masto"),
-    "cmpbr9le70003mo8mzzg84o2d": ("glyc", "x"),   # not in OP cadence plan; X posts contribute to engagement but plan tracks bsky/masto/ig
+    "cmpbr9le70003mo8mzzg84o2d": ("glyc", "x"),
     "cmq2rp6l1001ol98ugo3dz6oh": ("glyc", "ig"),
     "cmpbj9osm0008poec8q68tlgo": ("ibd",  "bsky"),
     "cmouqudgd0003o08gq5w1q3jj": ("ibd",  "masto"),
-    "cmpbr6c0n0001mo8mj5m2d3hx": ("ibd",  "x"),   # ditto
+    "cmpbr6c0n0001mo8mj5m2d3hx": ("ibd",  "x"),
     "cmq142urk0017l98u8phwixop": ("ibd",  "ig"),
 }
 
