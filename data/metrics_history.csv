@@ -850,3 +850,18 @@ date,property,metric,value,unit_window,source
 2026-06-15,ibd,social_ig_reach_last10,140,last10,instagram_api
 2026-06-15,glyc,indexed_pages,209,snapshot,browser-automation (gsc-ui)
 2026-06-15,ibd,indexed_pages,91,snapshot,browser-automation (gsc-ui)
+2026-06-14,glyc,cadence_recipes_actual,9,weekly,api
+2026-06-14,glyc,cadence_articles_actual,0,weekly,api
+2026-06-14,ibd,cadence_articles_actual,1,weekly,api
+2026-06-14,glyc,cadence_social_bsky_actual,0,weekly,api
+2026-06-14,glyc,cadence_social_masto_actual,0,weekly,api
+2026-06-14,glyc,cadence_social_ig_actual,0,weekly,api
+2026-06-14,ibd,cadence_social_bsky_actual,1,weekly,api
+2026-06-14,ibd,cadence_social_masto_actual,1,weekly,api
+2026-06-14,ibd,cadence_social_ig_actual,1,weekly,api
+2026-06-14,glyc,gsc_targetset_ranking_count,0,weekly,gsc_api
+2026-06-14,glyc,gsc_targetset_page1to3_count,0,weekly,gsc_api
+2026-06-14,glyc,gsc_targetset_page1_count,0,weekly,gsc_api
+2026-06-14,ibd,gsc_targetset_ranking_count,0,weekly,gsc_api
+2026-06-14,ibd,gsc_targetset_page1to3_count,0,weekly,gsc_api
+2026-06-14,ibd,gsc_targetset_page1_count,0,weekly,gsc_api
