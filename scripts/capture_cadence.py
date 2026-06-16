@@ -177,7 +177,7 @@ def fetch_postiz_social(since: date) -> dict[tuple[str, str, date], int]:
 
 def build_rows(weeks: list[date], as_of: date) -> list[dict]:
     """Fetch all sources and build metric rows for the given week-ending dates."""
-    since = min(weeks) - timedelta(days=1)
+    since = week_start(min(weeks)) - timedelta(days=1)
 
     print(f"Fetching Glyc recipes...", file=sys.stderr)
     glyc_recipes = fetch_glyc_recipes(since)
