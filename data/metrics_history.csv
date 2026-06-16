@@ -865,3 +865,5 @@ date,property,metric,value,unit_window,source
 2026-06-14,ibd,cadence_social_bsky_actual,4,weekly,api
 2026-06-14,ibd,cadence_social_masto_actual,4,weekly,api
 2026-06-14,ibd,cadence_social_ig_actual,4,weekly,api
+2026-06-14,glyc,cadence_social_x_actual,3,weekly,api
+2026-06-14,ibd,cadence_social_x_actual,4,weekly,api

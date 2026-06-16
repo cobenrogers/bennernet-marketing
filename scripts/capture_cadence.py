@@ -48,8 +48,8 @@ POSTIZ_INTEGRATIONS: dict[str, tuple[str, str]] = {
     "cmq142urk0017l98u8phwixop": ("ibd",  "ig"),
 }
 
-# Only these channels feed into cadence_plan actuals (X is tracked but not in plan)
-PLAN_CHANNELS = {"bsky", "masto", "ig"}
+# Channels that feed into cadence_plan actuals (X added 2026-06-16 per Ben's direction)
+PLAN_CHANNELS = {"bsky", "masto", "ig", "x"}
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +219,7 @@ def build_rows(weeks: list[date], as_of: date) -> list[dict]:
 
         # Social per property+channel
         for prop in ("glyc", "ibd"):
-            for channel in ("bsky", "masto", "ig"):
+            for channel in sorted(PLAN_CHANNELS):
                 val = social.get((prop, channel, we), 0)
                 rows.append({"date": we.isoformat(), "property": prop,
                              "metric": f"cadence_social_{channel}_actual",
