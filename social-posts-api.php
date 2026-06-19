@@ -229,10 +229,12 @@ switch ($action) {
 
     // ── publish_now: post immediately via Postiz public API ──────────────────
     // Strategy:
-    //   1. Fetch state, integrationId, content, image from DB via bridge
-    //   2. Soft-delete the draft via bridge
-    //   3. POST new post via Postiz API with type=now
-    //   On step 3 failure: restore the draft via bridge so no data loss.
+    //   1. Fetch state, integrationId, content, image, parentPostId from DB via bridge
+    //   2. For X: detect thread structure — find sibling row (URL-reply or main tweet)
+    //      and build a 2-entry value[] so Postiz publishes the whole thread at once
+    //   3. Soft-delete this post (and sibling if any) via bridge
+    //   4. POST new post via Postiz API with type=now
+    //   On step 4 failure: restore the soft-deleted rows so no data loss.
     case 'publish_now': {
         $contentOverride = $body['content'] ?? null;
 
@@ -253,6 +255,7 @@ switch ($action) {
         $provider      = strtolower($fields['provider'] ?? '');
         $dbContent     = $fields['content'] ?? null;
         $imageRaw      = $fields['image'] ?? null;
+        $parentPostId  = $fields['parentPostId'] ?? null;
 
         if (!in_array($state, ['DRAFT', 'QUEUE'], true)) {
             http_response_code(409);
@@ -268,59 +271,138 @@ switch ($action) {
 
         $content = $contentOverride ?? $dbContent ?? '';
 
-        // Step 1: soft-delete the draft
-        $delResult = mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
-            'action' => 'soft_delete',
-            'id'     => $postId,
-        ]);
-        if (!($delResult['ok'] ?? false)) {
-            http_response_code(500);
-            echo json_encode(['ok' => false, 'error' => 'Failed to retire old draft: ' . ($delResult['error'] ?? 'unknown')]);
-            exit;
-        }
+        // Build the value[] array — for X, assemble thread pairs so both entries
+        // publish together. Non-X platforms get a single-entry value[].
+        $valueEntries = [];
+        $siblingId    = null;  // sibling row to soft-delete alongside the main row
 
-        // Step 2: POST new post via Postiz API with type=now
-        // Resolve image array — API requires image to be an array (even empty)
-        $imageArr = [];
-        if ($imageRaw) {
-            $decoded = json_decode($imageRaw, true);
-            if (is_array($decoded) && !empty($decoded)) {
-                $imageArr = $decoded;
-            } elseif (is_string($imageRaw) && str_starts_with($imageRaw, 'http')) {
-                $imageArr = [['id' => $imageRaw, 'url' => $imageRaw, 'path' => $imageRaw]];
+        $isX = ($provider === 'x' || $provider === 'twitter');
+
+        if ($isX) {
+            if ($parentPostId) {
+                // This row is the URL-reply (value[1]). Fetch the parent (main tweet) fields.
+                $parentFields = mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
+                    'action' => 'fetch_fields',
+                    'id'     => $parentPostId,
+                ]);
+                if (($parentFields['ok'] ?? false) && isset($parentFields['state'])) {
+                    $mainContent  = $parentFields['content'] ?? '';
+                    $mainImageRaw = $parentFields['image'] ?? null;
+                    $mainImageArr = [];
+                    if ($mainImageRaw) {
+                        $dec = json_decode($mainImageRaw, true);
+                        if (is_array($dec) && !empty($dec)) $mainImageArr = $dec;
+                    }
+                    $valueEntries = [
+                        ['content' => $mainContent,       'image' => $mainImageArr],
+                        ['content' => $content,           'image' => []],
+                    ];
+                    $siblingId = $parentPostId;
+                }
+            } else {
+                // This row is the main tweet (value[0]). Look for a DRAFT URL-reply child.
+                $childResult = mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
+                    'action' => 'fetch_thread_child',
+                    'id'     => $postId,
+                ]);
+                $mainImageArr = [];
+                if ($imageRaw) {
+                    $dec = json_decode($imageRaw, true);
+                    if (is_array($dec) && !empty($dec)) $mainImageArr = $dec;
+                    elseif (is_string($imageRaw) && str_starts_with($imageRaw, 'http')) {
+                        $mainImageArr = [['id' => $imageRaw, 'url' => $imageRaw, 'path' => $imageRaw]];
+                    }
+                }
+                if (($childResult['ok'] ?? false) && ($childResult['found'] ?? false)) {
+                    $urlContent   = $childResult['content'] ?? '';
+                    $valueEntries = [
+                        ['content' => $content,     'image' => $mainImageArr],
+                        ['content' => $urlContent,  'image' => []],
+                    ];
+                    $siblingId = $childResult['id'];
+                } else {
+                    // No sibling — publish as a single tweet (graceful fallback)
+                    $valueEntries = [['content' => $content, 'image' => $mainImageArr]];
+                }
             }
         }
 
-        // Derive settings per platform (all require __type + post_type; X also requires who_can_reply_post)
-        $settings = ['__type' => $provider ?: 'social', 'post_type' => 'post'];
-        if ($provider === 'x' || $provider === 'twitter') {
-            $settings['who_can_reply_post'] = 'everyone';
+        if (empty($valueEntries)) {
+            // Non-X platform — single entry
+            $imageArr = [];
+            if ($imageRaw) {
+                $decoded = json_decode($imageRaw, true);
+                if (is_array($decoded) && !empty($decoded)) {
+                    $imageArr = $decoded;
+                } elseif (is_string($imageRaw) && str_starts_with($imageRaw, 'http')) {
+                    $imageArr = [['id' => $imageRaw, 'url' => $imageRaw, 'path' => $imageRaw]];
+                }
+            }
+            $valueEntries = [['content' => $content, 'image' => $imageArr]];
         }
 
+        // Settings: X threads don't need post_type; other platforms do
+        $settings = ['__type' => $provider ?: 'social'];
+        if ($isX) {
+            $settings['who_can_reply_post'] = 'everyone';
+        } else {
+            $settings['post_type'] = 'post';
+        }
+
+        // Step 1: soft-delete this post (and sibling if applicable)
+        $idsToDelete = array_filter([$postId, $siblingId]);
+        foreach ($idsToDelete as $idToDelete) {
+            $delResult = mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
+                'action' => 'soft_delete',
+                'id'     => $idToDelete,
+            ]);
+            if (!($delResult['ok'] ?? false)) {
+                http_response_code(500);
+                echo json_encode(['ok' => false, 'error' => 'Failed to retire draft (id=' . $idToDelete . '): ' . ($delResult['error'] ?? 'unknown')]);
+                exit;
+            }
+        }
+
+        // Step 2: POST new post via Postiz API with type=now
         $apiUrl  = $postizBaseUrl . '/api/public/v1/posts';
         $payload = [
             'type'      => 'now',
-            'date'      => date('c'),  // required by API even for type=now
+            'date'      => date('c'),
             'shortLink' => false,
             'tags'      => [],
             'posts'     => [[
                 'integration' => ['id' => $integrationId],
-                'value'       => [['content' => $content, 'image' => $imageArr]],
+                'value'       => $valueEntries,
                 'settings'    => $settings,
             ]],
         ];
 
         $response = mkPostizApiPost($apiUrl, $payload, $postizAuthHeader);
+
+        // Detect API failure: null response means network/timeout; error key or non-ok status
+        // means Postiz or the downstream platform rejected the post.
+        $apiError = null;
         if (!$response) {
-            // Rollback: restore the draft so no data loss
-            mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
-                'action' => 'restore',
-                'id'     => $postId,
-            ]);
+            $apiError = 'No response from Postiz API (network or timeout)';
+        } elseif (!empty($response['error'])) {
+            $apiError = 'Postiz error: ' . (is_string($response['error']) ? $response['error'] : json_encode($response['error']));
+        } elseif (isset($response['status']) && $response['status'] !== 'ok') {
+            $msg = $response['message'] ?? $response['error'] ?? json_encode($response);
+            $apiError = 'Postiz rejected post: ' . $msg;
+        }
+
+        if ($apiError) {
+            // Rollback: restore all soft-deleted rows so no data loss
+            foreach ($idsToDelete as $idToRestore) {
+                mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
+                    'action' => 'restore',
+                    'id'     => $idToRestore,
+                ]);
+            }
             http_response_code(502);
             echo json_encode([
                 'ok'    => false,
-                'error' => 'Postiz API call failed — draft has been restored. Check Postiz logs and retry.',
+                'error' => $apiError . ' — drafts have been restored.',
             ]);
             exit;
         }
