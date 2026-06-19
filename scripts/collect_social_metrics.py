@@ -34,7 +34,7 @@ APPEND_SCRIPT = os.path.join(REPO_ROOT, "scripts", "append_metrics.py")
 
 ACCOUNTS = {
     "glyc": {
-        "bluesky": "getglyc.com",
+        "bluesky": "did:plc:nhydio4s5mvrgtukzop2nugw",  # handle.invalid — custom domain broke; DID is stable
         "mastodon_user": "glyc",
         "mastodon_server": "mastodon.social",
     },
