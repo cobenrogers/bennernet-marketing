@@ -176,14 +176,18 @@ function mkSocialPostPlatform(array $post): string {
     if (str_contains($type, 'mastodon'))                                return 'Mastodon';
     if (str_contains($type, 'twitter') || $type === 'x')               return 'X/Twitter';
     if (str_contains($type, 'linkedin'))                                return 'LinkedIn';
+    if (str_contains($type, 'threads'))                                 return 'Threads';
     if (str_contains($type, 'instagram'))                               return 'Instagram';
+    if (str_contains($type, 'facebook'))                                return 'Facebook';
     if (str_contains($type, 'reddit'))                                  return 'Reddit';
     $name = strtolower($intg['name'] ?? '');
     if (str_contains($name, 'bluesky') || str_contains($name, 'bsky')) return 'Bluesky';
     if (str_contains($name, 'mastodon') || str_contains($name, 'masto')) return 'Mastodon';
     if (str_contains($name, 'twitter') || str_contains($name, 'x'))    return 'X/Twitter';
     if (str_contains($name, 'linkedin'))                                return 'LinkedIn';
+    if (str_contains($name, 'threads'))                                 return 'Threads';
     if (str_contains($name, 'instagram'))                               return 'Instagram';
+    if (str_contains($name, 'facebook'))                                return 'Facebook';
     if (str_contains($name, 'reddit'))                                  return 'Reddit';
     return 'Social';
 }
@@ -199,6 +203,8 @@ function mkSocialPlatformBadgeClass(string $platform): string {
         'Reddit'    => 'reddit',
         'X/Twitter' => 'twitter',
         'Instagram' => 'instagram',
+        'Threads'   => 'threads',
+        'Facebook'  => 'facebook',
         default     => 'neutral',
     };
 }
@@ -322,6 +328,8 @@ renderHeader('Social Posts — Marketing', [
 .mk-badge--reddit    { background: #ff4500; color: #fff; }
 .mk-badge--twitter   { background: #000;    color: #fff; }
 .mk-badge--instagram { background: #e1306c; color: #fff; }
+.mk-badge--threads   { background: #000;    color: #fff; }
+.mk-badge--facebook  { background: #1877f2; color: #fff; }
 .mk-badge--neutral   { background: var(--color-text-secondary); color: var(--color-surface); }
 
 /* State badges */

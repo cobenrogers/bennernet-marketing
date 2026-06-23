@@ -40,12 +40,17 @@ function mkPostizByPlatform(array $posts): array
     if (defined('POSTIZ_ID_IBD_X'))          $idMap[POSTIZ_ID_IBD_X]          = 'ibd_x';
     if (defined('POSTIZ_ID_GLYC_INSTAGRAM')) $idMap[POSTIZ_ID_GLYC_INSTAGRAM] = 'glyc_instagram';
     if (defined('POSTIZ_ID_IBD_INSTAGRAM'))  $idMap[POSTIZ_ID_IBD_INSTAGRAM]  = 'ibd_instagram';
+    // mcw#131 — active once Phase 1 IDs are populated
+    if (defined('POSTIZ_ID_GLYC_THREADS')  && POSTIZ_ID_GLYC_THREADS  !== '') $idMap[POSTIZ_ID_GLYC_THREADS]  = 'glyc_threads';
+    if (defined('POSTIZ_ID_IBD_THREADS')   && POSTIZ_ID_IBD_THREADS   !== '') $idMap[POSTIZ_ID_IBD_THREADS]   = 'ibd_threads';
+    if (defined('POSTIZ_ID_GLYC_FACEBOOK') && POSTIZ_ID_GLYC_FACEBOOK !== '') $idMap[POSTIZ_ID_GLYC_FACEBOOK] = 'glyc_facebook';
+    if (defined('POSTIZ_ID_IBD_FACEBOOK')  && POSTIZ_ID_IBD_FACEBOOK  !== '') $idMap[POSTIZ_ID_IBD_FACEBOOK]  = 'ibd_facebook';
 
     $result = [];
     foreach (array_unique(array_values($idMap)) as $key) {
         $result[$key] = ['queued' => 0, 'published_7d' => 0, 'errors_7d' => 0, 'last_published' => null];
     }
-    foreach (['glyc_mastodon', 'ibd_mastodon', 'glyc_bluesky', 'ibd_bluesky', 'glyc_x', 'ibd_x', 'glyc_instagram', 'ibd_instagram'] as $key) {
+    foreach (['glyc_mastodon', 'ibd_mastodon', 'glyc_bluesky', 'ibd_bluesky', 'glyc_x', 'ibd_x', 'glyc_instagram', 'ibd_instagram', 'glyc_threads', 'ibd_threads', 'glyc_facebook', 'ibd_facebook'] as $key) {
         if (!isset($result[$key])) {
             $result[$key] = ['queued' => 0, 'published_7d' => 0, 'errors_7d' => 0, 'last_published' => null];
         }

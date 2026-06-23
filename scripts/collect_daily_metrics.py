@@ -27,7 +27,8 @@ GSC_PROPERTIES = {"glyc": "sc-domain:getglyc.com", "ibd": "sc-domain:ibdmovement
 
 # Sources we actively post to; LinkedIn excluded (not an active Bennernet channel).
 _OUR_SOCIAL_KEYWORDS = frozenset(["mastodon", "bluesky", "bsky.app", "go.bsky.app",
-                                   "t.co", "x.com", "twitter", "instagram"])
+                                   "t.co", "x.com", "twitter", "instagram",
+                                   "threads", "facebook", "fb.com"])
 
 
 def _get_ga4_token() -> str:

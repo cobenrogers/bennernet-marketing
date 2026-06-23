@@ -808,6 +808,16 @@ $ibdInstaFollowers  = mkHistoryLatest($history, 'ibd',  'social_ig_followers');
 $glycInstaPrior7d   = mkHistoryPrior($history, 'glyc', 'social_ig_followers', 7);
 $ibdInstaPrior7d    = mkHistoryPrior($history, 'ibd',  'social_ig_followers', 7);
 
+// Threads + Facebook Page follower counts (mcw#131 — populated once Phase 1 IDs filled)
+$glycThreadsFollowers = mkHistoryLatest($history, 'glyc', 'social_threads_followers');
+$ibdThreadsFollowers  = mkHistoryLatest($history, 'ibd',  'social_threads_followers');
+$glycThreadsPrior7d   = mkHistoryPrior($history, 'glyc', 'social_threads_followers', 7);
+$ibdThreadsPrior7d    = mkHistoryPrior($history, 'ibd',  'social_threads_followers', 7);
+$glycFbFollowers      = mkHistoryLatest($history, 'glyc', 'social_fb_followers');
+$ibdFbFollowers       = mkHistoryLatest($history, 'ibd',  'social_fb_followers');
+$glycFbPrior7d        = mkHistoryPrior($history, 'glyc', 'social_fb_followers', 7);
+$ibdFbPrior7d         = mkHistoryPrior($history, 'ibd',  'social_fb_followers', 7);
+
 // Device split — mobile share of ENGAGED sessions (the real-user signal; raw
 // device users are bot-inflated, esp. Glyc mobile). Collected daily by
 // collect_daily_metrics.py as ga4_device_<dev>_engaged_sessions.
@@ -844,6 +854,11 @@ const POSTIZ_ID_GLYC_X          = 'cmpbr9le70003mo8mzzg84o2d';
 const POSTIZ_ID_IBD_X           = 'cmpbr6c0n0001mo8mj5m2d3hx';
 const POSTIZ_ID_GLYC_INSTAGRAM  = 'cmq2rp6l1001ol98ugo3dz6oh';
 const POSTIZ_ID_IBD_INSTAGRAM   = 'cmq142urk0017l98u8phwixop';
+// mcw#131 Phase 1 — fill after Postiz OAuth connect
+const POSTIZ_ID_GLYC_THREADS    = '';
+const POSTIZ_ID_IBD_THREADS     = '';
+const POSTIZ_ID_GLYC_FACEBOOK   = '';
+const POSTIZ_ID_IBD_FACEBOOK    = '';
 
 $postizCounts = mkPostizPostCounts();
 
@@ -991,6 +1006,16 @@ $glycMetrics = [
             ($glycInstaPrior7d !== null ? sprintf('%+d vs 7d ago', (int)$glycInstaFollowers - (int)$glycInstaPrior7d) : null),
             'raw', $glycInstaFollowers >= ($glycInstaPrior7d ?? $glycInstaFollowers) ? 'positive' : 'negative')
         : mkMetricStub('Instagram followers'),
+    $glycThreadsFollowers !== null
+        ? mkMetric('Threads followers', (int)$glycThreadsFollowers,
+            ($glycThreadsPrior7d !== null ? sprintf('%+d vs 7d ago', (int)$glycThreadsFollowers - (int)$glycThreadsPrior7d) : null),
+            'raw', $glycThreadsFollowers >= ($glycThreadsPrior7d ?? $glycThreadsFollowers) ? 'positive' : 'negative')
+        : mkMetricStub('Threads followers'),
+    $glycFbFollowers !== null
+        ? mkMetric('Facebook followers', (int)$glycFbFollowers,
+            ($glycFbPrior7d !== null ? sprintf('%+d vs 7d ago', (int)$glycFbFollowers - (int)$glycFbPrior7d) : null),
+            'raw', $glycFbFollowers >= ($glycFbPrior7d ?? $glycFbFollowers) ? 'positive' : 'negative')
+        : mkMetricStub('Facebook followers'),
     $glycPublished !== null
         ? mkMetric('Posts published', $glycPublished, $glycPostsDelta, 'raw', 'neutral')
         : mkMetricStub('Posts published'),
@@ -1082,6 +1107,16 @@ $ibdMetrics = [
             ($ibdInstaPrior7d !== null ? sprintf('%+d vs 7d ago', (int)$ibdInstaFollowers - (int)$ibdInstaPrior7d) : null),
             'raw', $ibdInstaFollowers >= ($ibdInstaPrior7d ?? $ibdInstaFollowers) ? 'positive' : 'negative')
         : mkMetricStub('Instagram followers'),
+    $ibdThreadsFollowers !== null
+        ? mkMetric('Threads followers', (int)$ibdThreadsFollowers,
+            ($ibdThreadsPrior7d !== null ? sprintf('%+d vs 7d ago', (int)$ibdThreadsFollowers - (int)$ibdThreadsPrior7d) : null),
+            'raw', $ibdThreadsFollowers >= ($ibdThreadsPrior7d ?? $ibdThreadsFollowers) ? 'positive' : 'negative')
+        : mkMetricStub('Threads followers'),
+    $ibdFbFollowers !== null
+        ? mkMetric('Facebook followers', (int)$ibdFbFollowers,
+            ($ibdFbPrior7d !== null ? sprintf('%+d vs 7d ago', (int)$ibdFbFollowers - (int)$ibdFbPrior7d) : null),
+            'raw', $ibdFbFollowers >= ($ibdFbPrior7d ?? $ibdFbFollowers) ? 'positive' : 'negative')
+        : mkMetricStub('Facebook followers'),
     $ibdPublished !== null
         ? mkMetric('Posts published', $ibdPublished, $ibdPostsDelta, 'raw', 'neutral')
         : mkMetricStub('Posts published'),

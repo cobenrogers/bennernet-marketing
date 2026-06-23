@@ -86,8 +86,12 @@ $glycBskyFollowers   = null;
 $ibdBskyFollowers    = null;
 $glycXFollowers      = null;
 $ibdXFollowers       = null;
-$glycInstaFollowers  = null;
-$ibdInstaFollowers   = null;
+$glycInstaFollowers   = null;
+$ibdInstaFollowers    = null;
+$glycThreadsFollowers = null;
+$ibdThreadsFollowers  = null;
+$glycFbFollowers      = null;
+$ibdFbFollowers       = null;
 $glycGa4Users       = null;
 $ibdGa4Users        = null;
 $glycSparkline      = null;
@@ -133,6 +137,12 @@ if ($tileCache && isset($tileCache['children']) && is_array($tileCache['children
             } elseif (stripos($label, 'instagram followers') !== false) {
                 if ($isGlyc) $glycInstaFollowers = $value;
                 if ($isIbd)  $ibdInstaFollowers  = $value;
+            } elseif (stripos($label, 'threads followers') !== false) {
+                if ($isGlyc) $glycThreadsFollowers = $value;
+                if ($isIbd)  $ibdThreadsFollowers  = $value;
+            } elseif (stripos($label, 'facebook followers') !== false) {
+                if ($isGlyc) $glycFbFollowers = $value;
+                if ($isIbd)  $ibdFbFollowers  = $value;
             } elseif (stripos($label, 'users') !== false) {
                 if ($isGlyc) $glycGa4Users = $value;
                 if ($isIbd)  $ibdGa4Users  = $value;
@@ -162,6 +172,11 @@ if (!defined('POSTIZ_ID_GLYC_X'))          define('POSTIZ_ID_GLYC_X',          '
 if (!defined('POSTIZ_ID_IBD_X'))           define('POSTIZ_ID_IBD_X',           'cmpbr6c0n0001mo8mj5m2d3hx');
 if (!defined('POSTIZ_ID_GLYC_INSTAGRAM'))  define('POSTIZ_ID_GLYC_INSTAGRAM',  'cmq2rp6l1001ol98ugo3dz6oh');
 if (!defined('POSTIZ_ID_IBD_INSTAGRAM'))   define('POSTIZ_ID_IBD_INSTAGRAM',   'cmq142urk0017l98u8phwixop');
+// mcw#131 Phase 1 — fill after Postiz OAuth connect
+if (!defined('POSTIZ_ID_GLYC_THREADS'))    define('POSTIZ_ID_GLYC_THREADS',    '');
+if (!defined('POSTIZ_ID_IBD_THREADS'))     define('POSTIZ_ID_IBD_THREADS',     '');
+if (!defined('POSTIZ_ID_GLYC_FACEBOOK'))   define('POSTIZ_ID_GLYC_FACEBOOK',   '');
+if (!defined('POSTIZ_ID_IBD_FACEBOOK'))    define('POSTIZ_ID_IBD_FACEBOOK',    '');
 
 // ── Data: Postiz queue status ─────────────────────────────────────────────────
 $postizQueueCount       = null;
@@ -720,6 +735,8 @@ renderHeader('Marketing', [
 .mk-badge--reddit    { background: #ff4500; color: #fff; }
 .mk-badge--twitter   { background: #000;    color: #fff; }
 .mk-badge--instagram { background: #e1306c; color: #fff; }
+.mk-badge--threads   { background: #000;    color: #fff; }
+.mk-badge--facebook  { background: #1877f2; color: #fff; }
 .mk-badge--neutral   { background: var(--color-text-secondary); color: var(--color-surface); }
 .mk-badge--stub      { background: var(--color-border); color: var(--color-text-secondary); }
 
@@ -1218,6 +1235,10 @@ renderHeader('Marketing', [
             ['platform' => 'X',         'badge' => 'twitter',   'account' => 'IBD Movement',  'followers' => $ibdXFollowers,       'platform_key' => 'ibd_x'],
             ['platform' => 'Instagram', 'badge' => 'instagram', 'account' => 'Glyc',         'followers' => $glycInstaFollowers,  'platform_key' => 'glyc_instagram'],
             ['platform' => 'Instagram', 'badge' => 'instagram', 'account' => 'IBD Movement',  'followers' => $ibdInstaFollowers,   'platform_key' => 'ibd_instagram'],
+            ['platform' => 'Threads',   'badge' => 'threads',   'account' => 'Glyc',         'followers' => $glycThreadsFollowers, 'platform_key' => 'glyc_threads'],
+            ['platform' => 'Threads',   'badge' => 'threads',   'account' => 'IBD Movement',  'followers' => $ibdThreadsFollowers,  'platform_key' => 'ibd_threads'],
+            ['platform' => 'Facebook',  'badge' => 'facebook',  'account' => 'Glyc',         'followers' => $glycFbFollowers,      'platform_key' => 'glyc_facebook'],
+            ['platform' => 'Facebook',  'badge' => 'facebook',  'account' => 'IBD Movement',  'followers' => $ibdFbFollowers,       'platform_key' => 'ibd_facebook'],
           ];
         ?>
         <table class="mk-channel-health-table">

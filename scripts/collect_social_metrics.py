@@ -2,7 +2,7 @@
 """Collect social engagement metrics for Glyc and IBD Movement.
 
 Fetches from Bluesky (AT Protocol public API), Mastodon (public API),
-and Instagram (Graph API via Postiz DB token).
+Instagram, Threads, and Facebook Pages (Graph API via Postiz DB token).
 X/Twitter engagement is paywalled — captures follower count only via manual entry.
 
 Run daily; idempotent via append_metrics.py deduplication on (date, property, metric).
@@ -18,6 +18,11 @@ Metrics written:
   social_ig_likes_last10        last10    (sum of like_count on last 10 IG posts)
   social_ig_comments_last10     last10    (sum of comments_count on last 10 IG posts)
   social_ig_reach_last10        last10    (sum of reach on last 10 IG posts; requires instagram_manage_insights)
+  social_threads_followers      snapshot  (Threads follower count)
+  social_threads_likes_last10   last10    (sum of like_count on last 10 Threads posts)
+  social_threads_replies_last10 last10    (sum of replies_count on last 10 Threads posts)
+  social_fb_followers           snapshot  (Facebook Page follower/fan count)
+  social_fb_reactions_last10    last10    (sum of reactions on last 10 FB posts)
 """
 
 import json
@@ -50,8 +55,22 @@ INSTAGRAM_INTEGRATIONS = {
     "ibd": "cmq142urk0017l98u8phwixop",
 }
 
+# Populated after mcw#131 Phase 1 (Postiz OAuth connect for Threads + FB Pages).
+# Uncomment and fill integration IDs once connections are live.
+THREADS_INTEGRATIONS: dict[str, str] = {
+    # "glyc": "TODO_fill_after_phase1",
+    # "ibd":  "TODO_fill_after_phase1",
+}
+
+FACEBOOK_INTEGRATIONS: dict[str, str] = {
+    # "glyc": "TODO_fill_after_phase1",
+    # "ibd":  "TODO_fill_after_phase1",
+}
+
 INSTAGRAM_GRAPH_BASE = "https://graph.facebook.com/v21.0"
 INSTAGRAM_REFRESH_URL = "https://graph.instagram.com/refresh_access_token"
+THREADS_GRAPH_BASE = "https://graph.threads.net/v1.0"
+THREADS_REFRESH_URL = "https://graph.threads.net/refresh_access_token"
 POSTIZ_COMPOSE = "~/postiz/docker-compose.yaml"
 
 
@@ -241,6 +260,109 @@ def collect_instagram(prop: str, integration_id: str, today: str) -> tuple[list,
     return rows, errors
 
 
+def _maybe_refresh_threads_token(integration_id: str, token: str, expiry_str: str) -> str:
+    """Refresh Threads long-lived token if expiring within 10 days. Returns active token."""
+    try:
+        expiry = datetime.fromisoformat(expiry_str.replace("Z", "+00:00"))
+        days_left = (expiry - datetime.now(expiry.tzinfo)).days
+        if days_left > 10:
+            return token
+    except Exception:
+        pass
+    try:
+        data = _fetch(
+            f"{THREADS_REFRESH_URL}?grant_type=th_refresh_token&access_token={token}"
+        )
+        new_token = data.get("access_token", token)
+        new_expiry = (datetime.utcnow() + timedelta(days=60)).isoformat() + "Z"
+        _update_postiz_token(integration_id, new_token, new_expiry)
+        return new_token
+    except Exception:
+        return token
+
+
+def collect_threads(prop: str, integration_id: str, today: str) -> tuple[list, list]:
+    rows, errors = [], []
+
+    def row(metric, value, window):
+        return {"date": today, "property": prop, "metric": metric,
+                "value": str(value), "unit_window": window, "source": "threads_api"}
+
+    db_row = _query_postiz_db_row(integration_id)
+    if not db_row:
+        errors.append(f"{prop} threads: failed to get token from Postiz DB")
+        return rows, errors
+
+    token = _maybe_refresh_threads_token(
+        integration_id, db_row["token"], db_row["tokenExpiration"]
+    )
+    threads_user_id = db_row["internalId"]
+
+    try:
+        data = _fetch(
+            f"{THREADS_GRAPH_BASE}/{threads_user_id}?fields=followers_count&access_token={token}"
+        )
+        rows.append(row("social_threads_followers", data.get("followers_count", 0), "snapshot"))
+    except Exception as e:
+        errors.append(f"{prop} threads followers: {e}")
+
+    try:
+        media_resp = _fetch(
+            f"{THREADS_GRAPH_BASE}/{threads_user_id}/threads"
+            f"?fields=id,like_count,replies_count&limit=10&access_token={token}"
+        )
+        media = media_resp.get("data", [])
+        likes = sum(p.get("like_count", 0) for p in media)
+        replies = sum(p.get("replies_count", 0) for p in media)
+        rows.append(row("social_threads_likes_last10", likes, "last10"))
+        rows.append(row("social_threads_replies_last10", replies, "last10"))
+    except Exception as e:
+        errors.append(f"{prop} threads posts: {e}")
+
+    return rows, errors
+
+
+def collect_facebook(prop: str, integration_id: str, today: str) -> tuple[list, list]:
+    rows, errors = [], []
+
+    def row(metric, value, window):
+        return {"date": today, "property": prop, "metric": metric,
+                "value": str(value), "unit_window": window, "source": "facebook_api"}
+
+    db_row = _query_postiz_db_row(integration_id)
+    if not db_row:
+        errors.append(f"{prop} facebook: failed to get token from Postiz DB")
+        return rows, errors
+
+    token = db_row["token"]
+    page_id = db_row["internalId"]
+
+    try:
+        data = _fetch(
+            f"{INSTAGRAM_GRAPH_BASE}/{page_id}?fields=fan_count,followers_count&access_token={token}"
+        )
+        count = data.get("followers_count") or data.get("fan_count", 0)
+        rows.append(row("social_fb_followers", count, "snapshot"))
+    except Exception as e:
+        errors.append(f"{prop} facebook followers: {e}")
+
+    try:
+        posts_resp = _fetch(
+            f"{INSTAGRAM_GRAPH_BASE}/{page_id}/posts"
+            f"?fields=reactions.summary(total_count),created_time&limit=10&access_token={token}"
+        )
+        posts = posts_resp.get("data", [])
+        reactions = sum(
+            p.get("reactions", {}).get("summary", {}).get("total_count", 0)
+            for p in posts
+        )
+        rows.append(row("social_fb_reactions_last10", reactions, "last10"))
+    except Exception as e:
+        errors.append(f"{prop} facebook reactions: {e}")
+
+    return rows, errors
+
+
 def main():
     today = date.today().isoformat()
     all_rows, all_errors = [], []
@@ -259,6 +381,16 @@ def main():
         ig_rows, ig_errors = collect_instagram(prop, integration_id, today)
         all_rows.extend(ig_rows)
         all_errors.extend(ig_errors)
+
+    for prop, integration_id in THREADS_INTEGRATIONS.items():
+        t_rows, t_errors = collect_threads(prop, integration_id, today)
+        all_rows.extend(t_rows)
+        all_errors.extend(t_errors)
+
+    for prop, integration_id in FACEBOOK_INTEGRATIONS.items():
+        fb_rows, fb_errors = collect_facebook(prop, integration_id, today)
+        all_rows.extend(fb_rows)
+        all_errors.extend(fb_errors)
 
     if all_errors:
         for e in all_errors:
