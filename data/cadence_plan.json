@@ -8,6 +8,8 @@
     "cadence_social_masto_actual":  3,
     "cadence_social_ig_actual":     3,
     "cadence_social_x_actual":      3,
+    "cadence_social_threads_actual": 3,
+    "cadence_social_fb_actual":     3,
     "cadence_community_actual":     3
   },
   "ibd": {
@@ -16,6 +18,8 @@
     "cadence_social_masto_actual":  3,
     "cadence_social_ig_actual":     3,
     "cadence_social_x_actual":      3,
+    "cadence_social_threads_actual": 3,
+    "cadence_social_fb_actual":     3,
     "cadence_community_actual":     2
   }
 }
