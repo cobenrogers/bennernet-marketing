@@ -63,8 +63,8 @@ THREADS_INTEGRATIONS: dict[str, str] = {
 }
 
 FACEBOOK_INTEGRATIONS: dict[str, str] = {
-    # "glyc": "TODO_fill_after_phase1",
-    # "ibd":  "TODO_fill_after_phase1",
+    "glyc": "cmqrbwzit0003qe8v1ct9obyk",
+    "ibd":  "cmqrbut0k0001qe8vobrivl6t",
 }
 
 INSTAGRAM_GRAPH_BASE = "https://graph.facebook.com/v21.0"

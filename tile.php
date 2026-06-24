@@ -857,8 +857,8 @@ const POSTIZ_ID_IBD_INSTAGRAM   = 'cmq142urk0017l98u8phwixop';
 // mcw#131 Phase 1 — fill after Postiz OAuth connect
 const POSTIZ_ID_GLYC_THREADS    = '';
 const POSTIZ_ID_IBD_THREADS     = '';
-const POSTIZ_ID_GLYC_FACEBOOK   = '';
-const POSTIZ_ID_IBD_FACEBOOK    = '';
+const POSTIZ_ID_GLYC_FACEBOOK   = 'cmqrbwzit0003qe8v1ct9obyk';
+const POSTIZ_ID_IBD_FACEBOOK    = 'cmqrbut0k0001qe8vobrivl6t';
 
 $postizCounts = mkPostizPostCounts();
 
