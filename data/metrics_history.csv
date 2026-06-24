@@ -1283,3 +1283,7 @@ date,property,metric,value,unit_window,source
 2026-06-23,ibd,social_ig_likes_last10,23,last10,instagram_api
 2026-06-23,ibd,social_ig_comments_last10,0,last10,instagram_api
 2026-06-23,ibd,social_ig_reach_last10,191,last10,instagram_api
+2026-06-23,glyc,social_fb_followers,0,snapshot,facebook_api
+2026-06-23,glyc,social_fb_reactions_last10,0,last10,facebook_api
+2026-06-23,ibd,social_fb_followers,0,snapshot,facebook_api
+2026-06-23,ibd,social_fb_reactions_last10,0,last10,facebook_api
