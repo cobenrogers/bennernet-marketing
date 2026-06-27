@@ -44,10 +44,7 @@ ACCOUNTS = {
         "mastodon_server": "mastodon.social",
     },
     "ibd": {
-        # Bluesky account ibdmovement.bsky.social was never registered — handle
-        # 400'd every run (surfaced 2026-06-27, pending Ben's Tier-1 call).
-        # Set to a non-empty handle/DID once an account exists to re-enable.
-        "bluesky": None,
+        "bluesky": "did:plc:uairlh3cxwwyoos3kqcllu3l",  # ibdmovement.com — custom domain updated 2026-06-26; DID is stable
         "mastodon_user": "theibdmovement",
         "mastodon_server": "mastodon.social",
     },
