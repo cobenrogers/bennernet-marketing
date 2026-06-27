@@ -44,7 +44,10 @@ ACCOUNTS = {
         "mastodon_server": "mastodon.social",
     },
     "ibd": {
-        "bluesky": "ibdmovement.bsky.social",
+        # Bluesky account ibdmovement.bsky.social was never registered — handle
+        # 400'd every run (surfaced 2026-06-27, pending Ben's Tier-1 call).
+        # Set to a non-empty handle/DID once an account exists to re-enable.
+        "bluesky": None,
         "mastodon_user": "theibdmovement",
         "mastodon_server": "mastodon.social",
     },
@@ -368,9 +371,10 @@ def main():
     all_rows, all_errors = [], []
 
     for prop, cfg in ACCOUNTS.items():
-        bsky_rows, bsky_errors = collect_bluesky(prop, cfg["bluesky"], today)
-        all_rows.extend(bsky_rows)
-        all_errors.extend(bsky_errors)
+        if cfg.get("bluesky"):
+            bsky_rows, bsky_errors = collect_bluesky(prop, cfg["bluesky"], today)
+            all_rows.extend(bsky_rows)
+            all_errors.extend(bsky_errors)
 
         masto_rows, masto_errors = collect_mastodon(
             prop, cfg["mastodon_user"], cfg["mastodon_server"], today)
