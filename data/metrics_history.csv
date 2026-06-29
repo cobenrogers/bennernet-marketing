@@ -1592,3 +1592,5 @@ date,property,metric,value,unit_window,source
 2026-06-29,glyc,social_fb_reactions_last10,0,last10,facebook_api
 2026-06-29,ibd,social_fb_followers,0,snapshot,facebook_api
 2026-06-29,ibd,social_fb_reactions_last10,0,last10,facebook_api
+2026-06-29,glyc,indexed_pages,209,snapshot,browser-automation (gsc-ui)
+2026-06-29,ibd,indexed_pages,91,snapshot,browser-automation (gsc-ui)
