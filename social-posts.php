@@ -121,6 +121,46 @@ if (!$postizError && !empty($posts) && $bridgeBaseUrl !== null) {
     }
 }
 
+// ── Fallback og:image for posts with no stored image ──────────────────────────
+// Facebook posts always have image:[] (platform rule prevents 1366051 error),
+// so we fetch og:image from the linked URL server-side for Port preview.
+$postOgImages    = [];  // [postId => ogImageUrl]
+$ogFetchedByUrl  = [];  // cache within request: [url => ogImageUrl|false]
+if (!$postizError && !empty($posts)) {
+    foreach ($posts as $p) {
+        $pid = $p['id'] ?? '';
+        if (!$pid || isset($postImages[$pid])) {
+            continue;  // already has a stored image
+        }
+        $txt = $p['content'] ?? '';
+        if (!preg_match('#https?://[^\s<>"\']+#', $txt, $m)) {
+            continue;  // no URL in content to derive og:image from
+        }
+        $targetUrl = rtrim($m[0], '.,;!?)');
+        if (!array_key_exists($targetUrl, $ogFetchedByUrl)) {
+            $ogCtx = stream_context_create(['http' => [
+                'method'  => 'GET',
+                'header'  => "User-Agent: Googlebot/2.1 (+http://www.google.com/bot.html)\r\n",
+                'timeout' => 5,
+                'ignore_errors' => true,
+            ]]);
+            $html = @file_get_contents($targetUrl, false, $ogCtx);
+            $ogUrl = null;
+            if ($html) {
+                // og:image can appear in either attribute order
+                if (preg_match('/<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\'][^>]*>/i', $html, $mm)
+                 || preg_match('/<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\'][^>]*>/i', $html, $mm)) {
+                    $ogUrl = $mm[1];
+                }
+            }
+            $ogFetchedByUrl[$targetUrl] = $ogUrl;
+        }
+        if ($ogFetchedByUrl[$targetUrl]) {
+            $postOgImages[$pid] = $ogFetchedByUrl[$targetUrl];
+        }
+    }
+}
+
 // ── Active filter tab ─────────────────────────────────────────────────────────
 $validFilters = ['all', 'draft', 'scheduled', 'published', 'error'];
 $activeFilter = strtolower($_GET['filter'] ?? 'all');
@@ -558,8 +598,8 @@ renderHeader('Social Posts — Marketing', [
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   overflow: hidden;
-  max-height: 280px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
 }
@@ -574,6 +614,15 @@ renderHeader('Social Posts — Marketing', [
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
   text-align: center;
+}
+.mk-post-panel__image-note {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-bg-secondary, #f5f5f5);
+  border-top: 1px solid var(--color-border);
+  margin: 0;
 }
 
 /* Published URL */
@@ -800,8 +849,14 @@ renderHeader('Social Posts — Marketing', [
               $ts   = strtotime($post['publishDate'] ?? $post['createdAt'] ?? '');
               $time = $ts ? date('g:i A', $ts) : '';
 
-              // Image URL — fetched from DB via bridge bulk call (API does not return images)
-              $imageUrl = $postImages[$postId] ?? null;
+              // Image URL — DB-stored image preferred; og:image from linked URL as fallback
+              // (Facebook posts always have image:[] in DB; og:image shown for preview only)
+              $imageUrl   = $postImages[$postId] ?? null;
+              $isOgImage  = false;
+              if (!$imageUrl && isset($postOgImages[$postId])) {
+                  $imageUrl  = $postOgImages[$postId];
+                  $isOgImage = true;
+              }
 
               $releaseUrl = $post['releaseURL'] ?? $post['releaseUrl'] ?? null;
               $isPublished = ($state === 'PUBLISHED');
@@ -863,6 +918,9 @@ renderHeader('Social Posts — Marketing', [
                            src="<?= h($imageUrl) ?>"
                            alt="Post image"
                            loading="lazy">
+                      <?php if ($isOgImage): ?>
+                        <p class="mk-post-panel__image-note">og:image preview — not published with post</p>
+                      <?php endif; ?>
                     <?php else: ?>
                       <p class="mk-post-panel__image-placeholder">
                         <svg class="icon" aria-hidden="true" style="width:24px;height:24px;opacity:0.3;margin-bottom:var(--space-2);display:block;margin-inline:auto"><use href="/port/shared/assets/icons/lucide.svg#image"></use></svg>
