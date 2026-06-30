@@ -225,9 +225,17 @@ _Living document — refreshed every Tuesday before review. Operational pulse; ~
 
 ## The three questions
 
-1. What did our audience experience last week? _(customer-facing inputs first)_
-2. How did the business perform last week?
-3. Are we on track to the OP targets?
+**1. What did our audience experience last week?** _(customer-facing inputs first)_
+
+{{{{Q1_NARRATIVE}}}}
+
+**2. How did the business perform last week?**
+
+{{{{Q2_NARRATIVE}}}}
+
+**3. Are we on track to the OP targets?**
+
+{{{{Q3_NARRATIVE}}}}
 
 ---
 """)
@@ -238,6 +246,14 @@ _Living document — refreshed every Tuesday before review. Operational pulse; ~
 
     sections.append(f"""\
 ## Glyc — getglyc.com · north star: sign-ups ({glyc_ns_str} this period)
+
+### Business Update
+
+{{{{GLYC_BUSINESS_UPDATE}}}}
+
+### Highlights & Lowlights
+
+{{{{GLYC_HIGHLIGHTS_LOWLIGHTS}}}}
 
 ### Inputs (controllable — where the work is)
 
@@ -258,6 +274,14 @@ _Cadence rows marked (retro) are pre-OP (before 2026-06-09) — informational on
 
     sections.append(f"""\
 ## IBD Movement — ibdmovement.com · north star: de-botted engaged sessions ({ibd_ns_str} this period)
+
+### Business Update
+
+{{{{IBD_BUSINESS_UPDATE}}}}
+
+### Highlights & Lowlights
+
+{{{{IBD_HIGHLIGHTS_LOWLIGHTS}}}}
 
 ### Inputs (controllable)
 
@@ -301,6 +325,35 @@ _Format: what happened · root cause hypothesis · recommendation. {exception_co
 <!-- DECK EXCEPTION FACTS (for Haiku reference — do not render):
 {exception_facts}
 -->
+
+---
+""")
+
+    # ── Cadence adherence ───────────────────────────────────────────────────
+    sections.append("""\
+## Cadence adherence — did we pull the levers?
+
+{{CADENCE_ADHERENCE}}
+
+_Community cadence tracked manually. Pre-OP weeks (before 2026-06-09) are informational only._
+
+---
+""")
+
+    # ── Risks & Challenges ──────────────────────────────────────────────────
+    sections.append("""\
+## Risks & Challenges
+
+{{RISKS_CHALLENGES}}
+
+---
+""")
+
+    # ── Action Items & Follow-ups ───────────────────────────────────────────
+    sections.append("""\
+## Action Items & Follow-ups
+
+{{ACTION_ITEMS}}
 
 ---
 """)
