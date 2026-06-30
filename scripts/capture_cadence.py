@@ -42,14 +42,17 @@ POSTIZ_INTEGRATIONS: dict[str, tuple[str, str]] = {
     "cmouqqkw70001o08gts5rpnyb": ("glyc", "masto"),
     "cmpbr9le70003mo8mzzg84o2d": ("glyc", "x"),
     "cmq2rp6l1001ol98ugo3dz6oh": ("glyc", "ig"),
+    "cmqrbwzit0003qe8v1ct9obyk": ("glyc", "fb"),
     "cmpbj9osm0008poec8q68tlgo": ("ibd",  "bsky"),
     "cmouqudgd0003o08gq5w1q3jj": ("ibd",  "masto"),
     "cmpbr6c0n0001mo8mj5m2d3hx": ("ibd",  "x"),
     "cmq142urk0017l98u8phwixop": ("ibd",  "ig"),
+    "cmqrbut0k0001qe8vobrivl6t": ("ibd",  "fb"),
 }
 
-# Channels that feed into cadence_plan actuals (X added 2026-06-16 per Ben's direction)
-PLAN_CHANNELS = {"bsky", "masto", "ig", "x"}
+# Channels that feed into cadence_plan actuals (X added 2026-06-16, FB added 2026-06-30
+# per mcw#136 — integration IDs match FACEBOOK_INTEGRATIONS in collect_social_metrics.py)
+PLAN_CHANNELS = {"bsky", "masto", "ig", "x", "fb"}
 
 
 # ---------------------------------------------------------------------------
