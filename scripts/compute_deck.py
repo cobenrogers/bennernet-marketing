@@ -37,7 +37,6 @@ OP_TARGETS: dict[tuple[str, str], dict] = {
     ("glyc", "indexed_pages"):           {"q3": 130, "q4": 175,  "unit_window": "snapshot", "higher_is_better": True},
     ("glyc", "social_bsky_followers"):   {"q3": 150, "q4": 300,  "unit_window": "snapshot", "higher_is_better": True},
     ("glyc", "social_ig_followers"):     {"q3": 150, "q4": 300,  "unit_window": "snapshot", "higher_is_better": True},
-    ("glyc", "social_threads_followers"):{"q3": None,"q4": None, "unit_window": "snapshot", "higher_is_better": True},
     ("glyc", "social_fb_followers"):     {"q3": None,"q4": None, "unit_window": "snapshot", "higher_is_better": True},
     ("glyc", "social_masto_followers"):  {"q3": None,"q4": None, "unit_window": "snapshot", "higher_is_better": True},
     # cadence_adherence — not in CSV yet; instrumented in bm#29
@@ -65,13 +64,11 @@ OP_TARGETS: dict[tuple[str, str], dict] = {
     ("glyc", "cadence_social_masto_actual"):  {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},
     ("glyc", "cadence_social_ig_actual"):     {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},
     ("glyc", "cadence_social_x_actual"):     {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},
-    ("glyc", "cadence_social_threads_actual"): {"q3": 90, "q4": 90,  "unit_window": "weekly",   "higher_is_better": True},  # 3×/week per mcw#131
     ("glyc", "cadence_social_fb_actual"):    {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},  # 3×/week per mcw#131
     # IBD inputs
     ("ibd",  "indexed_pages"):           {"q3": 130, "q4": 160,  "unit_window": "snapshot", "higher_is_better": True},
     ("ibd",  "social_bsky_followers"):   {"q3": 120, "q4": 200,  "unit_window": "snapshot", "higher_is_better": True},
     ("ibd",  "social_ig_followers"):     {"q3": 80,  "q4": 150,  "unit_window": "snapshot", "higher_is_better": True},
-    ("ibd",  "social_threads_followers"):{"q3": None,"q4": None, "unit_window": "snapshot", "higher_is_better": True},
     ("ibd",  "social_fb_followers"):     {"q3": None,"q4": None, "unit_window": "snapshot", "higher_is_better": True},
     ("ibd",  "social_masto_followers"):  {"q3": None,"q4": None, "unit_window": "snapshot", "higher_is_better": True},
     # IBD outputs
@@ -90,7 +87,6 @@ OP_TARGETS: dict[tuple[str, str], dict] = {
     ("ibd",  "cadence_social_masto_actual"):  {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},
     ("ibd",  "cadence_social_ig_actual"):     {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},
     ("ibd",  "cadence_social_x_actual"):     {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},
-    ("ibd",  "cadence_social_threads_actual"): {"q3": 90, "q4": 90,  "unit_window": "weekly",   "higher_is_better": True},  # 3×/week per mcw#131
     ("ibd",  "cadence_social_fb_actual"):    {"q3": 90,  "q4": 90,   "unit_window": "weekly",   "higher_is_better": True},  # 3×/week per mcw#131
 }
 
@@ -99,7 +95,6 @@ OP_INPUTS: set[tuple[str, str]] = {
     ("glyc", "indexed_pages"),
     ("glyc", "social_bsky_followers"),
     ("glyc", "social_ig_followers"),
-    ("glyc", "social_threads_followers"),
     ("glyc", "social_fb_followers"),
     ("glyc", "social_masto_followers"),
     ("glyc", "cadence_recipes_actual"),
@@ -108,12 +103,10 @@ OP_INPUTS: set[tuple[str, str]] = {
     ("glyc", "cadence_social_masto_actual"),
     ("glyc", "cadence_social_ig_actual"),
     ("glyc", "cadence_social_x_actual"),
-    ("glyc", "cadence_social_threads_actual"),
     ("glyc", "cadence_social_fb_actual"),
     ("ibd",  "indexed_pages"),
     ("ibd",  "social_bsky_followers"),
     ("ibd",  "social_ig_followers"),
-    ("ibd",  "social_threads_followers"),
     ("ibd",  "social_fb_followers"),
     ("ibd",  "social_masto_followers"),
     ("ibd",  "cadence_articles_actual"),
@@ -121,7 +114,6 @@ OP_INPUTS: set[tuple[str, str]] = {
     ("ibd",  "cadence_social_masto_actual"),
     ("ibd",  "cadence_social_ig_actual"),
     ("ibd",  "cadence_social_x_actual"),
-    ("ibd",  "cadence_social_threads_actual"),
     ("ibd",  "cadence_social_fb_actual"),
 }
 
@@ -138,7 +130,6 @@ OP_METRICS_ORDERED: dict[str, list[str]] = {
         "indexed_pages",
         "social_bsky_followers",
         "social_ig_followers",
-        "social_threads_followers",
         "social_fb_followers",
         "social_masto_followers",
         "cadence_recipes_actual",
@@ -147,7 +138,6 @@ OP_METRICS_ORDERED: dict[str, list[str]] = {
         "cadence_social_masto_actual",
         "cadence_social_ig_actual",
         "cadence_social_x_actual",
-        "cadence_social_threads_actual",
         "cadence_social_fb_actual",
         # outputs
         "ga4_sign_ups",
@@ -165,7 +155,6 @@ OP_METRICS_ORDERED: dict[str, list[str]] = {
         "indexed_pages",
         "social_bsky_followers",
         "social_ig_followers",
-        "social_threads_followers",
         "social_fb_followers",
         "social_masto_followers",
         "cadence_articles_actual",
@@ -173,7 +162,6 @@ OP_METRICS_ORDERED: dict[str, list[str]] = {
         "cadence_social_masto_actual",
         "cadence_social_ig_actual",
         "cadence_social_x_actual",
-        "cadence_social_threads_actual",
         "cadence_social_fb_actual",
         # outputs
         "ga4_debotted_sessions",

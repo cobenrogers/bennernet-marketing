@@ -28,12 +28,10 @@ GLYC_INPUTS = [
     ("cadence_social_masto_actual", "Mastodon cadence (actual/planned)"),
     ("cadence_social_ig_actual",      "Instagram cadence (actual/planned)"),
     ("cadence_social_x_actual",       "X.com cadence (actual/planned)"),
-    ("cadence_social_threads_actual", "Threads cadence (actual/planned)"),
     ("cadence_social_fb_actual",      "Facebook cadence (actual/planned)"),
     ("indexed_pages",                 "Indexed pages"),
     ("social_bsky_followers",         "Bluesky followers"),
     ("social_ig_followers",           "Instagram followers"),
-    ("social_threads_followers",      "Threads followers"),
     ("social_fb_followers",           "Facebook followers"),
     ("social_masto_followers",        "Mastodon followers"),
     ("utm_social_sessions",           "UTM social sessions (28d)"),
@@ -56,12 +54,10 @@ IBD_INPUTS = [
     ("cadence_social_masto_actual", "Mastodon cadence (actual/planned)"),
     ("cadence_social_ig_actual",      "Instagram cadence (actual/planned)"),
     ("cadence_social_x_actual",       "X.com cadence (actual/planned)"),
-    ("cadence_social_threads_actual", "Threads cadence (actual/planned)"),
     ("cadence_social_fb_actual",      "Facebook cadence (actual/planned)"),
     ("indexed_pages",                 "Indexed pages"),
     ("social_bsky_followers",         "Bluesky followers"),
     ("social_ig_followers",           "Instagram followers"),
-    ("social_threads_followers",      "Threads followers"),
     ("social_fb_followers",           "Facebook followers"),
     ("social_masto_followers",        "Mastodon followers"),
     ("utm_social_sessions",         "UTM social sessions (28d)"),
@@ -305,20 +301,6 @@ _Format: what happened · root cause hypothesis · recommendation. {exception_co
 <!-- DECK EXCEPTION FACTS (for Haiku reference — do not render):
 {exception_facts}
 -->
-
----
-""")
-
-    # ── Cadence adherence ───────────────────────────────────────────────────
-    sections.append("""\
-## Cadence adherence — did we pull the levers?
-
-| Channel | Planned/wk | Actual | Adherence |
-|---|---|---|---|
-| Glyc: recipes 5 · articles 2 · BSky 5 · Masto 5 · IG 3 | — | _pending_ | — |
-| IBD: articles 2 · BSky 4 · Masto 4 · IG 3 | — | _pending_ | — |
-
-_Community answers tracked manually (use `append_metrics.py --metric cadence_community_actual`). Retro weeks pre-2026-06-09 are informational._
 
 ---
 """)
