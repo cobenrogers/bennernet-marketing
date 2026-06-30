@@ -16,6 +16,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/social-posts-lib.php';
 require_once PORT_ROOT . '/shared/shell.php';
 
 header('Content-Type: application/json');
@@ -230,9 +231,10 @@ switch ($action) {
     // ── publish_now: post immediately via Postiz public API ──────────────────
     // Strategy:
     //   1. Fetch state, integrationId, content, image, parentPostId from DB via bridge
-    //   2. For X: detect thread structure — find sibling row (URL-reply or main tweet)
-    //      and build a 2-entry value[] so Postiz publishes the whole thread at once
-    //   3. Soft-delete this post (and sibling if any) via bridge
+    //   2. For X: find the thread root (walk parentPostId backward), then walk
+    //      forward via fetch_thread_child to build the full N-row value[] chain —
+    //      publish_now can be invoked from any row in the thread.
+    //   3. Soft-delete every post in the chain via bridge
     //   4. POST new post via Postiz API with type=now
     //   On step 4 failure: restore the soft-deleted rows so no data loss.
     case 'publish_now': {
@@ -270,87 +272,41 @@ switch ($action) {
         }
 
         $content = $contentOverride ?? $dbContent ?? '';
-
-        // Build the value[] array — for X, assemble thread pairs so both entries
-        // publish together. Non-X platforms get a single-entry value[].
-        $valueEntries = [];
-        $siblingId    = null;  // sibling row to soft-delete alongside the main row
-
-        $isX = ($provider === 'x' || $provider === 'twitter');
+        $isX     = ($provider === 'x' || $provider === 'twitter');
 
         if ($isX) {
-            if ($parentPostId) {
-                // This row is the URL-reply (value[1]). Fetch the parent (main tweet) fields.
-                $parentFields = mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
-                    'action' => 'fetch_fields',
-                    'id'     => $parentPostId,
-                ]);
-                if (($parentFields['ok'] ?? false) && isset($parentFields['state'])) {
-                    $mainContent  = $parentFields['content'] ?? '';
-                    $mainImageRaw = $parentFields['image'] ?? null;
-                    $mainImageArr = [];
-                    if ($mainImageRaw) {
-                        $dec = json_decode($mainImageRaw, true);
-                        if (is_array($dec) && !empty($dec)) $mainImageArr = $dec;
-                    }
-                    $valueEntries = [
-                        ['content' => $mainContent,       'image' => $mainImageArr],
-                        ['content' => $content,           'image' => []],
-                    ];
-                    $siblingId = $parentPostId;
+            // Bridge-backed callables for the pure chain-walking functions.
+            $fetchFields = function (string $id) use ($bridgeBaseUrl, $bridgeAuthHeader): ?array {
+                $r = mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, ['action' => 'fetch_fields', 'id' => $id]);
+                if (!($r['ok'] ?? false) || !isset($r['state'])) {
+                    return null;
                 }
-            } else {
-                // This row is the main tweet (value[0]). Look for a DRAFT URL-reply child.
-                $childResult = mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
-                    'action' => 'fetch_thread_child',
-                    'id'     => $postId,
-                ]);
-                $mainImageArr = [];
-                if ($imageRaw) {
-                    $dec = json_decode($imageRaw, true);
-                    if (is_array($dec) && !empty($dec)) $mainImageArr = $dec;
-                    elseif (is_string($imageRaw) && str_starts_with($imageRaw, 'http')) {
-                        $mainImageArr = [['id' => $imageRaw, 'url' => $imageRaw, 'path' => $imageRaw]];
-                    }
+                return ['content' => $r['content'] ?? null, 'image' => $r['image'] ?? null, 'parentPostId' => $r['parentPostId'] ?? null];
+            };
+            $fetchChild = function (string $parentId) use ($bridgeBaseUrl, $bridgeAuthHeader): ?array {
+                $r = mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, ['action' => 'fetch_thread_child', 'id' => $parentId]);
+                if (!($r['ok'] ?? false) || !($r['found'] ?? false)) {
+                    return null;
                 }
-                if (($childResult['ok'] ?? false) && ($childResult['found'] ?? false)) {
-                    $urlContent   = $childResult['content'] ?? '';
-                    $valueEntries = [
-                        ['content' => $content,     'image' => $mainImageArr],
-                        ['content' => $urlContent,  'image' => []],
-                    ];
-                    $siblingId = $childResult['id'];
-                } else {
-                    // No sibling — publish as a single tweet (graceful fallback)
-                    $valueEntries = [['content' => $content, 'image' => $mainImageArr]];
-                }
-            }
-        }
+                return ['id' => $r['id'], 'content' => $r['content'] ?? '', 'image' => $r['image'] ?? null];
+            };
 
-        if (empty($valueEntries)) {
-            // Non-X platform — single entry
-            $imageArr = [];
-            if ($imageRaw) {
-                $decoded = json_decode($imageRaw, true);
-                if (is_array($decoded) && !empty($decoded)) {
-                    $imageArr = $decoded;
-                } elseif (is_string($imageRaw) && str_starts_with($imageRaw, 'http')) {
-                    $imageArr = [['id' => $imageRaw, 'url' => $imageRaw, 'path' => $imageRaw]];
-                }
-            }
-            $valueEntries = [['content' => $content, 'image' => $imageArr]];
-        }
-
-        // Settings: X threads don't need post_type; other platforms do
-        $settings = ['__type' => $provider ?: 'social'];
-        if ($isX) {
-            $settings['who_can_reply_post'] = 'everyone';
+            // Use the override content for the invoked row, DB content otherwise —
+            // mkFindThreadRoot/mkBuildThreadChain re-fetch every row in the chain
+            // from the bridge, so apply the override after locating the root.
+            $startFields = ['content' => $content, 'image' => $imageRaw, 'parentPostId' => $parentPostId];
+            $root         = mkFindThreadRoot($postId, $startFields, $fetchFields);
+            $chain        = mkBuildThreadChain($root['id'], $root['content'], $root['image'], $fetchChild);
+            $valueEntries = $chain['entries'];
+            $idsToDelete  = $chain['ids'];
         } else {
-            $settings['post_type'] = 'post';
+            $valueEntries = [['content' => $content, 'image' => mkDecodeImageField($imageRaw)]];
+            $idsToDelete  = [$postId];
         }
 
-        // Step 1: soft-delete this post (and sibling if applicable)
-        $idsToDelete = array_filter([$postId, $siblingId]);
+        $settings = mkBuildPostSettings($provider);
+
+        // Step 1: soft-delete every post in the chain
         foreach ($idsToDelete as $idToDelete) {
             $delResult = mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
                 'action' => 'soft_delete',
