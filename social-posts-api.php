@@ -334,31 +334,28 @@ switch ($action) {
         ];
 
         $response = mkPostizApiPost($apiUrl, $payload, $postizAuthHeader);
+        $failure  = mkClassifyPublishFailure($response);
 
-        // Detect API failure: null response means network/timeout; error key or non-ok status
-        // means Postiz or the downstream platform rejected the post.
-        $apiError = null;
-        if (!$response) {
-            $apiError = 'No response from Postiz API (network or timeout)';
-        } elseif (!empty($response['error'])) {
-            $apiError = 'Postiz error: ' . (is_string($response['error']) ? $response['error'] : json_encode($response['error']));
-        } elseif (isset($response['status']) && $response['status'] !== 'ok') {
-            $msg = $response['message'] ?? $response['error'] ?? json_encode($response);
-            $apiError = 'Postiz rejected post: ' . $msg;
-        }
-
-        if ($apiError) {
-            // Rollback: restore all soft-deleted rows so no data loss
+        if ($failure !== null) {
+            // Rollback: restore all soft-deleted rows. 'timeout' is ambiguous —
+            // Postiz may have actually published before we lost the response —
+            // so those rows go to ERROR (requires human verification before
+            // retry) rather than DRAFT, to prevent a silent duplicate publish.
+            $restoreState = mkRollbackStateForFailureKind($failure['kind']);
             foreach ($idsToDelete as $idToRestore) {
                 mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
-                    'action' => 'restore',
-                    'id'     => $idToRestore,
+                    'action'  => 'restore',
+                    'id'      => $idToRestore,
+                    'asState' => $restoreState,
                 ]);
             }
             http_response_code(502);
+            $restoreNote = $restoreState === 'ERROR'
+                ? ' — publish status is unknown; drafts marked ERROR, verify on the platform before retrying.'
+                : ' — drafts have been restored.';
             echo json_encode([
                 'ok'    => false,
-                'error' => $apiError . ' — drafts have been restored.',
+                'error' => $failure['message'] . $restoreNote,
             ]);
             exit;
         }

@@ -200,4 +200,55 @@ class SocialPostsLibTest extends TestCase
         $this->assertArrayNotHasKey('spoiler_text', $settings);
         $this->assertArrayNotHasKey('content_warning', $settings);
     }
+
+    // ── mkClassifyPublishFailure ──────────────────────────────────────────────
+    //
+    // Two distinct failure modes need different rollback behavior:
+    //   'rejected' — Postiz gave us a clear error/non-ok response. We KNOW
+    //                nothing was published. Safe to restore the draft as DRAFT
+    //                for an immediate retry.
+    //   'timeout'  — no response at all (network/timeout). We do NOT know
+    //                whether Postiz actually processed the post. Restoring as
+    //                DRAFT here would let a retry silently double-publish if
+    //                Postiz's request actually succeeded after our timeout.
+    //                Must restore as ERROR instead, forcing a human to check
+    //                the platform before retrying.
+
+    public function testClassifyPublishFailureNullResponseIsTimeout(): void
+    {
+        $result = mkClassifyPublishFailure(null);
+        $this->assertSame('timeout', $result['kind']);
+    }
+
+    public function testClassifyPublishFailureErrorKeyIsRejected(): void
+    {
+        $result = mkClassifyPublishFailure(['error' => 'Invalid integration']);
+        $this->assertSame('rejected', $result['kind']);
+        $this->assertStringContainsString('Invalid integration', $result['message']);
+    }
+
+    public function testClassifyPublishFailureNonOkStatusIsRejected(): void
+    {
+        $result = mkClassifyPublishFailure(['status' => 'error', 'message' => 'Bad request']);
+        $this->assertSame('rejected', $result['kind']);
+        $this->assertStringContainsString('Bad request', $result['message']);
+    }
+
+    public function testClassifyPublishFailureOkResponseReturnsNoFailure(): void
+    {
+        $result = mkClassifyPublishFailure(['status' => 'ok', 'postId' => 'abc']);
+        $this->assertNull($result);
+    }
+
+    // ── mkRollbackStateForFailureKind ─────────────────────────────────────────
+
+    public function testRollbackStateForRejectedIsDraft(): void
+    {
+        $this->assertSame('DRAFT', mkRollbackStateForFailureKind('rejected'));
+    }
+
+    public function testRollbackStateForTimeoutIsError(): void
+    {
+        $this->assertSame('ERROR', mkRollbackStateForFailureKind('timeout'));
+    }
 }

@@ -127,3 +127,47 @@ function mkBuildPostSettings(string $provider): array
 
     return $settings;
 }
+
+/**
+ * Classify a Postiz publish API response into a failure kind, or null if
+ * the publish succeeded.
+ *
+ * Two failure modes require different rollback handling:
+ *   'rejected' — Postiz gave us a clear error/non-ok response. Nothing was
+ *                published; safe to restore the draft as DRAFT for retry.
+ *   'timeout'  — no response (network/timeout). We do NOT know whether
+ *                Postiz actually processed the post — restoring as DRAFT
+ *                here would let a retry silently double-publish if the
+ *                original request actually succeeded after our timeout.
+ *
+ * @param array|null $response decoded Postiz API response, or null if the
+ *                              HTTP call itself failed/timed out
+ * @return array{kind:string, message:string}|null  null means success
+ */
+function mkClassifyPublishFailure(?array $response): ?array
+{
+    if (!$response) {
+        return ['kind' => 'timeout', 'message' => 'No response from Postiz API (network or timeout)'];
+    }
+    if (!empty($response['error'])) {
+        $msg = is_string($response['error']) ? $response['error'] : json_encode($response['error']);
+        return ['kind' => 'rejected', 'message' => 'Postiz error: ' . $msg];
+    }
+    if (isset($response['status']) && $response['status'] !== 'ok') {
+        $msg = $response['message'] ?? $response['error'] ?? json_encode($response);
+        return ['kind' => 'rejected', 'message' => 'Postiz rejected post: ' . $msg];
+    }
+    return null;
+}
+
+/**
+ * Map a publish-failure kind to the state a rolled-back draft should be
+ * restored to. 'rejected' (confirmed nothing published) restores to DRAFT
+ * for immediate retry. 'timeout' (ambiguous — may have actually published)
+ * restores to ERROR, forcing a human to verify on the platform before
+ * retrying, so an ambiguous timeout can never silently double-publish.
+ */
+function mkRollbackStateForFailureKind(string $kind): string
+{
+    return $kind === 'timeout' ? 'ERROR' : 'DRAFT';
+}
