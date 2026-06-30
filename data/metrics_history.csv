@@ -1594,3 +1594,20 @@ date,property,metric,value,unit_window,source
 2026-06-29,ibd,social_fb_reactions_last10,0,last10,facebook_api
 2026-06-29,glyc,indexed_pages,209,snapshot,browser-automation (gsc-ui)
 2026-06-29,ibd,indexed_pages,91,snapshot,browser-automation (gsc-ui)
+2026-06-28,glyc,cadence_recipes_actual,9,weekly,api
+2026-06-28,glyc,cadence_articles_actual,3,weekly,api
+2026-06-28,ibd,cadence_articles_actual,2,weekly,api
+2026-06-28,glyc,cadence_social_bsky_actual,3,weekly,api
+2026-06-28,glyc,cadence_social_ig_actual,3,weekly,api
+2026-06-28,glyc,cadence_social_masto_actual,3,weekly,api
+2026-06-28,glyc,cadence_social_x_actual,6,weekly,api
+2026-06-28,ibd,cadence_social_bsky_actual,2,weekly,api
+2026-06-28,ibd,cadence_social_ig_actual,2,weekly,api
+2026-06-28,ibd,cadence_social_masto_actual,2,weekly,api
+2026-06-28,ibd,cadence_social_x_actual,4,weekly,api
+2026-06-28,glyc,gsc_targetset_ranking_count,0,weekly,gsc_api
+2026-06-28,glyc,gsc_targetset_page1to3_count,0,weekly,gsc_api
+2026-06-28,glyc,gsc_targetset_page1_count,0,weekly,gsc_api
+2026-06-28,ibd,gsc_targetset_ranking_count,0,weekly,gsc_api
+2026-06-28,ibd,gsc_targetset_page1to3_count,0,weekly,gsc_api
+2026-06-28,ibd,gsc_targetset_page1_count,0,weekly,gsc_api
