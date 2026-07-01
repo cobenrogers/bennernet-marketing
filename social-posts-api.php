@@ -179,6 +179,28 @@ switch ($action) {
         break;
     }
 
+    // ── edit_image_alt: UPDATE image[0].alt for a DRAFT post's stored image ──
+    case 'edit_image_alt': {
+        $alt = $body['alt'] ?? null;
+        if ($alt === null) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => 'Missing alt']);
+            exit;
+        }
+        $result = mkBridgeDbCall($bridgeBaseUrl, $bridgeAuthHeader, [
+            'action' => 'edit_image_alt',
+            'id'     => $postId,
+            'alt'    => $alt,
+        ]);
+        if (!($result['ok'] ?? false)) {
+            http_response_code(500);
+            echo json_encode(['ok' => false, 'error' => 'DB update failed: ' . ($result['error'] ?? 'unknown')]);
+            exit;
+        }
+        echo json_encode(['ok' => true]);
+        break;
+    }
+
     // ── reschedule: UPDATE publishDate for a DRAFT/QUEUE post ────────────────
     case 'reschedule': {
         $publishDate = trim($body['publishDate'] ?? '');

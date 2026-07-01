@@ -102,6 +102,7 @@ if ($postizConfigured) {
 // The Postiz public API does not return image URLs. Fetch them from the DB
 // in a single batch call to avoid per-post queries.
 $postImages = [];  // [postId => imageUrl]
+$postImageAlt = []; // [postId => altText|null]
 if (!$postizError && !empty($posts) && $bridgeBaseUrl !== null) {
     $postIds    = array_values(array_filter(array_column($posts, 'id')));
     $imgPayload = json_encode(['action' => 'fetch_images_bulk', 'ids' => $postIds]);
@@ -116,7 +117,8 @@ if (!$postizError && !empty($posts) && $bridgeBaseUrl !== null) {
     if ($imgBody) {
         $imgData = json_decode($imgBody, true);
         if (is_array($imgData) && ($imgData['ok'] ?? false)) {
-            $postImages = $imgData['images'] ?? [];
+            $postImages   = $imgData['images'] ?? [];
+            $postImageAlt = $imgData['imageAlt'] ?? [];
         }
     }
 }
@@ -661,6 +663,39 @@ renderHeader('Social Posts — Marketing', [
   cursor: default;
 }
 
+/* Alt text */
+.mk-post-panel__alt-label {
+  display: block;
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-secondary);
+  margin-top: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+.mk-post-panel__alt-hint {
+  font-weight: normal;
+  opacity: 0.75;
+}
+.mk-post-panel__alt-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  transition: border-color var(--transition-fast);
+}
+.mk-post-panel__alt-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+.mk-post-panel__alt-input[readonly] {
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  cursor: default;
+}
+
 /* Actions row */
 .mk-post-panel__actions {
   display: flex;
@@ -929,6 +964,20 @@ renderHeader('Social Posts — Marketing', [
                     <?php endif; ?>
                   </div>
 
+                  <!-- Alt text (real stored images only — og:image previews aren't published) -->
+                  <?php if ($imageUrl && !$isOgImage): ?>
+                    <label class="mk-post-panel__alt-label" for="alt-<?= h($postId) ?>">
+                      Image alt text <span class="mk-post-panel__alt-hint">(read by screen readers; used by Mastodon)</span>
+                    </label>
+                    <input type="text"
+                           class="mk-post-panel__alt-input"
+                           id="alt-<?= h($postId) ?>"
+                           data-post-id="<?= h($postId) ?>"
+                           value="<?= h($postImageAlt[$postId] ?? '') ?>"
+                           <?= $isPublished ? 'readonly' : '' ?>
+                           placeholder="Describe the image for screen-reader users">
+                  <?php endif; ?>
+
                   <!-- Published: view link -->
                   <?php if ($isPublished && $releaseUrl): ?>
                     <p class="mk-post-panel__release-url">
@@ -1125,24 +1174,35 @@ renderHeader('Social Posts — Marketing', [
     });
   }
 
-  // ── Save edits ────────────────────────────────────────────────────────────
+  // ── Save edits (content + alt text, if an alt-text field exists) ───────────
   document.querySelectorAll('.mk-action-save').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var postId  = btn.dataset.postId;
       var content = document.getElementById('content-' + postId).value;
+      var altEl   = document.getElementById('alt-' + postId);
       btn.disabled = true;
-      callApi(
-        postId,
-        { action: 'edit_content', id: postId, content: content },
-        function () {
+
+      function saveContent() {
+        return new Promise(function (resolve, reject) {
+          callApi(postId, { action: 'edit_content', id: postId, content: content }, resolve, reject);
+        });
+      }
+      function saveAlt() {
+        if (!altEl) { return Promise.resolve(); }
+        return new Promise(function (resolve, reject) {
+          callApi(postId, { action: 'edit_image_alt', id: postId, alt: altEl.value }, resolve, reject);
+        });
+      }
+
+      Promise.all([saveContent(), saveAlt()])
+        .then(function () {
           showFeedback(postId, 'success', 'Saved.');
           btn.disabled = false;
-        },
-        function (err) {
+        })
+        .catch(function (err) {
           showFeedback(postId, 'error', 'Save failed: ' + err);
           btn.disabled = false;
-        }
-      );
+        });
     });
   });
 
