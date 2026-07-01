@@ -193,6 +193,28 @@ def render_table(prop_data: dict, rows: list[tuple[str, str]]) -> str:
 # WBR markdown builder
 # ---------------------------------------------------------------------------
 
+def fmt_budget_row(label: str, entry: dict, unit: str = "$") -> str:
+    value = entry.get("value")
+    error = entry.get("error")
+    if error is not None:
+        return f"| {label} | _unavailable ({error})_ |"
+    if unit == "$":
+        return f"| {label} | ${value:,.2f} |"
+    return f"| {label} | {value:,.2f} credits |"
+
+
+def render_budget_section(deck: dict) -> str:
+    budget = deck.get("budget", {})
+    if not budget:
+        return "_(balance cache not available this run)_"
+    rows = [
+        fmt_budget_row("Anthropic", budget.get("anthropic", {})),
+        fmt_budget_row("OpenAI", budget.get("openai", {})),
+        fmt_budget_row("Stability AI", budget.get("stability_ai", {}), unit="credits"),
+    ]
+    return "| Platform | Balance |\n| --- | --- |\n" + "\n".join(rows)
+
+
 def build_wbr(deck: dict) -> str:
     as_of = deck.get("as_of", date.today().isoformat())
     props = deck.get("properties", {})
@@ -363,6 +385,15 @@ _Community cadence tracked manually. Pre-OP weeks (before 2026-06-09) are inform
 ## Ops & blockers
 
 {{OPS_BLOCKERS}}
+
+---
+""")
+
+    # ── Budget platform balances ────────────────────────────────────────────
+    sections.append(f"""\
+## Budget — platform balances
+
+{render_budget_section(deck)}
 """)
 
     return "\n".join(sections)

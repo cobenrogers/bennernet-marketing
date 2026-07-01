@@ -19,11 +19,14 @@ import csv
 import json
 import os
 import sys
+import time
 from collections import defaultdict
 from datetime import date, timedelta
 from typing import Optional
 
 HISTORY_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "metrics_history.csv")
+BALANCES_CACHE_FILE = os.path.expanduser("~/cache/accounting/balances.json")
+BALANCES_STALE_SECONDS = 25 * 3600
 CADENCE_PLAN_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "cadence_plan.json")
 
 # ---------------------------------------------------------------------------
@@ -450,12 +453,46 @@ def compute_metric_entry(
 
 
 # ---------------------------------------------------------------------------
+# Budget platform balances (Anthropic / OpenAI / Stability AI)
+# ---------------------------------------------------------------------------
+
+def compute_budget(cache_path: str = BALANCES_CACHE_FILE) -> dict:
+    """Read the locally-cached accounting balances (refreshed daily by
+    collect-balances.php). Returns a dict keyed by service with a value and
+    an error/staleness reason so the WBR can render "unavailable" instead of
+    conflating a missing feed with the generic "_pending_" placeholder."""
+    try:
+        with open(cache_path) as f:
+            cache = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        reason = f"cache_unreadable: {exc}"
+        return {
+            svc: {"value": None, "error": reason}
+            for svc in ("anthropic", "openai", "stability_ai")
+        }
+
+    collected_at = cache.get("collected_at")
+    stale = collected_at is not None and (time.time() - collected_at) > BALANCES_STALE_SECONDS
+    services = cache.get("services", {})
+
+    budget = {}
+    for svc in ("anthropic", "openai", "stability_ai"):
+        entry = services.get(svc, {})
+        error = entry.get("error")
+        if error is None and stale:
+            error = "stale_cache"
+        value = entry.get("balance_usd") if svc != "stability_ai" else entry.get("credits")
+        budget[svc] = {"value": value if error is None else None, "error": error}
+    return budget
+
+
+# ---------------------------------------------------------------------------
 # Full deck
 # ---------------------------------------------------------------------------
 
 def compute_deck(properties: list[str], as_of: date, history_path: str = HISTORY_FILE) -> dict:
     store = load_history(history_path)
-    result = {"as_of": as_of.isoformat(), "properties": {}}
+    result = {"as_of": as_of.isoformat(), "properties": {}, "budget": compute_budget()}
     for prop in properties:
         metrics = OP_METRICS_ORDERED.get(prop, [])
         entries = [compute_metric_entry(prop, m, store, as_of) for m in metrics]
